@@ -2,17 +2,23 @@ import os
 import asyncio
 from langchain_openai import ChatOpenAI
 from simple_agent_framework import ChatAgent, ToolAgent, RouterAgent
+from dotenv import load_dotenv
+
+# 将.env导入环境变量
+load_dotenv()
 
 # 检查环境变量中是否设置了OpenAI API密钥
-api_key = os.environ.get("OPENAI_API_KEY")
+base_url = "https://chatapi.zjt66.top/v1"
+key_name = "ANTHROPIC_API_KEY"
+api_key = os.environ.get(key_name)
 if not api_key:
-    raise ValueError("请设置OPENAI_API_KEY环境变量")
+    raise ValueError(f"请设置{key_name}环境变量")
 
 
 async def main():
     # 创建一个大语言模型实例，使用OpenAI的gpt-3.5-turbo模型
     # temperature参数控制输出的随机性，值越低越确定性，值越高越创造性
-    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+    llm = ChatOpenAI(model="claude-3-5-haiku-20241022", temperature=0.7, base_url=base_url, api_key=api_key)
 
     # 创建通用聊天代理
     # ChatAgent是simple_agent_framework中的基础代理类型，用于一般对话
@@ -77,9 +83,9 @@ async def main():
     # 通过不同类型的问题展示路由代理如何分发请求
     print("===== 测试路由代理 =====")
     queries = [
-        "法国的首都是什么？",  # 通用知识问题
-        "我计划去日本旅行。东京有什么值得看的？",  # 旅游相关问题
-        "如何在Python中写一个递归函数？",  # 编程问题
+        "法国的首都是什么?",  # 通用知识问题
+        "我计划去日本旅行。东京有什么值得看的?",  # 旅游相关问题
+        "如何在Python中写一个递归函数?",  # 编程问题
         "帮我查询langchain仓库的信息",  # GitHub相关查询
     ]
 
