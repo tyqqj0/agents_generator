@@ -7,10 +7,27 @@ Simple Tool Agent Example
 import os
 import asyncio
 import logging
+import sys
+from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.tools import tool
 from agents import ToolAgent
+
+# 添加项目根目录到Python路径
+project_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(project_root))
+
+# 尝试导入UV路径辅助类（对于简单示例不是必须的）
+try:
+    from mcp_servers.utils.uv_helper import UVPathHelper
+
+    uv_helper = UVPathHelper()
+    print(f"UV环境路径: {uv_helper.base_dir}")
+    print(f"UV环境存在: {uv_helper.exists()}")
+except ImportError:
+    uv_helper = None
+    print("UV路径辅助类不可用，但对于本示例不是必需的")
 
 # 设置日志
 logging.basicConfig(

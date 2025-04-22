@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "calculator": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "O:\\program\\py_pgm\\agents_generator\\mcp_servers\\servers",
+        "run",
+        "calculator_mcp.py"
+      ],
+      "transport": "stdio"
+    },
+    "weather": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "O:\\program\\py_pgm\\agents_generator\\mcp_servers\\servers",
+        "run",
+        "weather_mcp.py"
+      ],
+      "transport": "stdio"
+    }
+  }
+}

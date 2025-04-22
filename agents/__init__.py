@@ -9,6 +9,14 @@ from .templates.prompts import (
     DEFAULT_CODE_PROMPT,
 )
 
+# 导入补丁模块并应用补丁
+try:
+    from .langchain_mcp_adapters_patch import apply_patch
+
+    apply_patch()
+except ImportError:
+    pass
+
 # 导出MCP相关功能
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient

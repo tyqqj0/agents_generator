@@ -56,16 +56,32 @@ class BaseAgent(ABC):
         """创建代理, 子类必须实现"""
         raise NotImplementedError
 
-    async def agenerate(
-        self, query: str, messages: Optional[List[BaseMessage]] = None, **kwargs
-    ) -> AgentResponse:
-        """异步生成响应，子类必须实现"""
-        # 准备消息
-        message_history = messages or []
-        message_history.append(HumanMessage(content=query))
+    async def agenerate(self, input_text: str, **kwargs) -> AgentResponse:
+        """异步生成回复"""
+        if not self._initialized and (self.tools or self.mcp_servers):
+            await self.ainit()
 
-        response = await self.agent.ainvoke({"messages": message_history})
-        return AgentResponse(content=response.content)
+        response = await self.llm.ainvoke(
+            self._get_messages(input_text),
+            functions=self._get_tools_for_llm() if self.tools else None,
+            temperature=getattr(self, "temperature", 0.7),
+            **kwargs,
+        )
+
+        # 处理不同类型的响应
+        if hasattr(response, "content"):
+            # 标准响应格式
+            return AgentResponse(content=response.content)
+        elif isinstance(response, dict) and "content" in response:
+            # 字典格式响应
+            return AgentResponse(content=response["content"])
+        elif hasattr(response, "get") and callable(response.get):
+            # 类字典对象
+            content = response.get("content", str(response))
+            return AgentResponse(content=content)
+        else:
+            # 其他类型，转换为字符串
+            return AgentResponse(content=str(response))
 
     def generate(
         self, query: str, messages: Optional[List[BaseMessage]] = None, **kwargs
@@ -93,7 +109,16 @@ class BaseAgent(ABC):
                     await self.mcp_client.__aenter__()
                     # 加载MCP工具并添加到工具列表
                     # 检查load_mcp_tools返回的是否为协程对象
-                    mcp_tools_result = load_mcp_tools(self.mcp_client)
+
+                    # 兼容性处理：MultiServerMCPClient可能有get_tools而非list_tools方法
+                    mcp_tools_result = None
+                    if hasattr(self.mcp_client, "get_tools"):
+                        # 使用get_tools方法
+                        mcp_tools_result = self.mcp_client.get_tools()
+                    else:
+                        # 使用标准的load_mcp_tools函数
+                        mcp_tools_result = load_mcp_tools(self.mcp_client)
+
                     if asyncio.iscoroutine(mcp_tools_result):
                         mcp_tools = await mcp_tools_result
                     else:
@@ -104,7 +129,7 @@ class BaseAgent(ABC):
                         self.tools.extend(mcp_tools)
                     else:
                         raise TypeError(
-                            f"load_mcp_tools应该返回可迭代对象，当前类型为: {type(mcp_tools)}"
+                            f"MCP工具加载函数应该返回可迭代对象，当前类型为: {type(mcp_tools)}"
                         )
                 except Exception as e:
                     # 确保在出错时关闭MCP客户端

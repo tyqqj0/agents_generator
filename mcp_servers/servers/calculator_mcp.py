@@ -6,10 +6,14 @@
 
 import math
 import os
+import sys
 from mcp.server.fastmcp import FastMCP
 
+# 将上一级文件夹添加到sys.path，确保可以找到uv
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # 初始化 FastMCP server
-mcp = FastMCP("calculator")
+mcp = FastMCP("calculator", keep_alive=True)
 
 # 服务器配置信息
 SERVER_NAME = "calculator"
@@ -123,4 +127,17 @@ async def sqrt(number: float) -> float:
 if __name__ == "__main__":
     # 启动MCP服务器
     print(f"启动MCP服务器: {SERVER_NAME}")
+    # full_str = {
+    #     "name": SERVER_NAME,
+    #     "command": "uv",
+    #     "args": [
+    #         "--directory",
+    #         os.path.dirname(os.path.abspath(__file__)),
+    #         "run",
+    #         os.path.basename(__file__),
+    #     ],
+    #     "transport": "stdio",
+    #     "description": "基础计算器MCP服务器",
+    # }
+    print(SERVER_CONFIG)
     mcp.run(transport="stdio")
