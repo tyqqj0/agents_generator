@@ -7,7 +7,7 @@ This example demonstrates how to use the ChatAgent for basic conversation.
 import os
 import asyncio
 from langchain_openai import ChatOpenAI
-from simple_agent_framework import ChatAgent
+from agents import ChatAgent
 
 # Load API key from environment
 api_key = os.environ.get("OPENAI_API_KEY")

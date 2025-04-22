@@ -7,7 +7,7 @@ This example demonstrates how to use the RouterAgent to route queries to special
 import os
 import asyncio
 from langchain_openai import ChatOpenAI
-from simple_agent_framework import RouterAgent, ChatAgent, ToolAgent
+from agents import RouterAgent, ChatAgent, ToolAgent
 
 # Load API key from environment
 api_key = os.environ.get("OPENAI_API_KEY")
