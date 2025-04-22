@@ -71,9 +71,12 @@ class ToolAgent(BaseAgent):
         # 创建状态图构建器
         graph_builder = StateGraph(State)
 
-        # 获取工具列表
+        # 获取工具列表，确保包含MCP工具
         tools = self.tools or []
-
+        
+        # 在绑定工具前添加日志，验证工具是否正确加载
+        # print(f"tools: {tools}")
+        
         # 绑定工具到语言模型
         llm_with_tools = self.model.bind_tools(tools)
 
@@ -86,6 +89,9 @@ class ToolAgent(BaseAgent):
                 messages = [
                     {"type": "system", "content": self.system_prompt}
                 ] + messages
+                
+                
+            # 检查模型
 
             # 调用语言模型
             response = llm_with_tools.invoke(messages)
@@ -114,3 +120,16 @@ class ToolAgent(BaseAgent):
 
         # 编译并返回图
         return graph_builder.compile()
+    
+    
+
+    def _get_messages(self, input_text: str) -> List[BaseMessage]:
+        """提供带有系统提示的消息列表"""
+        from langchain_core.messages import SystemMessage
+        
+        # 创建包含系统提示的消息列表
+        messages = [SystemMessage(content=self.system_prompt)]
+        # 添加用户输入
+        messages.append(HumanMessage(content=input_text))
+        
+        return messages

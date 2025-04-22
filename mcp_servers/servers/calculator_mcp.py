@@ -126,7 +126,7 @@ async def sqrt(number: float) -> float:
 
 if __name__ == "__main__":
     # 启动MCP服务器
-    print(f"启动MCP服务器: {SERVER_NAME}")
+    # print(f"启动MCP服务器: {SERVER_NAME}")
     # full_str = {
     #     "name": SERVER_NAME,
     #     "command": "uv",
@@ -139,5 +139,5 @@ if __name__ == "__main__":
     #     "transport": "stdio",
     #     "description": "基础计算器MCP服务器",
     # }
-    print(SERVER_CONFIG)
+    # print(SERVER_CONFIG)
     mcp.run(transport="stdio")

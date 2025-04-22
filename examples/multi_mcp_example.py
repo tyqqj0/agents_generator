@@ -7,7 +7,19 @@
 import os
 import sys
 import asyncio
+import random
+import logging  # 添加日志模块
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+# 配置日志级别
+# 禁用OpenAI的HTTP请求日志
+os.environ["OPENAI_LOG"] = "none"
+# 设置MCP和其他库的日志级别为WARNING，减少INFO日志的输出
+logging.getLogger("mcp").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("langchain").setLevel(logging.WARNING)
 
 # 把上级目录添加到sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,7 +31,8 @@ from mcp_servers import get_available_servers, get_mcp_config
 load_dotenv()
 
 # 使用适当的API密钥
-api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+api_name = "OPENAI_API_KEY"
+api_key = os.environ.get(api_name)
 base_url = os.environ.get("BASE_URL")  # 可选的API base URL
 
 
@@ -77,5 +90,39 @@ async def test_mcp_connection():
     return True
 
 
+async def test_mcp_connection_with_agent():
+    """测试MCP服务器连接"""
+    # 获取MCP服务器列表和配置
+    names = get_available_servers()
+    # print(f"可用的MCP服务器: {names}")
+    mcp_servers = get_mcp_config(names)
+    
+    model = ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=api_key,
+        base_url=base_url
+    )
+    
+    # 创建Agent
+    agent = ToolAgent(
+        name="mcp_agent",
+        model=model,
+        mcp_servers=mcp_servers
+    )
+
+    # 生成随机两个大数
+    num1 = random.randint(1, 1000000)
+    num2 = random.randint(1, 1000000)
+    
+    # 测试Agent
+    async with agent:  # 这会调用__aenter__，从而执行_setup_mcp_client
+        result = await agent.agenerate(f"请问，你是否可以使用工具add,计算{num1}+{num2}")
+    print(result["messages"][-1].content)
+
+    # 验证结果
+    print(f"验证结果: {num1 + num2}")
+
 if __name__ == "__main__":
-    asyncio.run(test_mcp_connection())
+    # asyncio.run(test_mcp_connection())
+    asyncio.run(test_mcp_connection_with_agent())
+    

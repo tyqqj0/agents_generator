@@ -12,6 +12,8 @@ from .utils.config_manager import (
     generate_mcp_config_file,
 )
 
+
+
 # 版本
 __version__ = "0.1.0"
 

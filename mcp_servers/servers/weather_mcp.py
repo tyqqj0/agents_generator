@@ -184,5 +184,5 @@ async def get_weather_forecast(city: str, days: int) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     # 启动MCP服务器
-    print(f"启动MCP服务器: {SERVER_NAME}")
+    # print(f"启动MCP服务器: {SERVER_NAME}")
     mcp.run(transport="stdio")
