@@ -1,22 +1,21 @@
-from .agents.base import BaseAgent, AgentResponse
-from .agents.chat_agent import ChatAgent
-from .agents.tool_agent import ToolAgent
-from .agents.router_agent import RouterAgent
+"""
+Agent模块包
+
+提供各种类型的智能代理实现
+"""
+
+from .base import BaseAgent
+from .tool_agent import ToolAgent
+
+# 注释掉不存在的导入
+# from .agents.chat_agent import ChatAgent
+# from .agents.router_agent import RouterAgent
 from .templates.prompts import (
     DEFAULT_CHAT_PROMPT,
     DEFAULT_TOOL_PROMPT,
     DEFAULT_RESEARCH_PROMPT,
     DEFAULT_CODE_PROMPT,
 )
-
-# 导入补丁模块并应用补丁
-try:
-    from .langchain_mcp_adapters_patch import apply_patch
-
-    apply_patch()
-except ImportError:
-    pass
-
 # 导出MCP相关功能
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -37,14 +36,7 @@ try:
 
     __all__ = [
         "BaseAgent",
-        "AgentResponse",
-        "ChatAgent",
         "ToolAgent",
-        "RouterAgent",
-        "DEFAULT_CHAT_PROMPT",
-        "DEFAULT_TOOL_PROMPT",
-        "DEFAULT_RESEARCH_PROMPT",
-        "DEFAULT_CODE_PROMPT",
         "MultiServerMCPClient",
         "load_mcp_tools",
         "create_mcp_client",
@@ -52,15 +44,9 @@ try:
 except ImportError:
     # 如果未安装langchain_mcp_adapters，则仅导出核心组件
     __all__ = [
-        "Agent",
-        "AgentResponse",
-        "ChatAgent",
-        "ToolAgent",
-        "RouterAgent",
-        "DEFAULT_CHAT_PROMPT",
-        "DEFAULT_TOOL_PROMPT",
-        "DEFAULT_RESEARCH_PROMPT",
-        "DEFAULT_CODE_PROMPT",
+        "BaseAgent",
+        "ToolAgent"
     ]
 
+# 包版本信息
 __version__ = "0.1.0"

@@ -1,6 +1,10 @@
 langchain-openai
+langchain-anthropic
+langchain
+langgraph
 python-dotenv
 anthropic
 openai
+mcp
 fastapi
 uvicorn 

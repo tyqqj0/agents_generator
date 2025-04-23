@@ -1,8 +1,8 @@
 from typing import List, Dict, Any, Optional, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from .base import BaseAgent, AgentResponse
-from ..templates.prompts import DEFAULT_TOOL_PROMPT
+from .base import BaseAgent
+from .templates.prompts import DEFAULT_TOOL_PROMPT
 from langgraph.graph.graph import CompiledGraph
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph

@@ -14,12 +14,6 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.graph.graph import CompiledGraph
 
 
-class AgentResponse(BaseModel):
-    """统一的代理响应格式"""
-
-    content: str
-    raw_response: Any = None  # 原始响应对象
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class BaseAgent(ABC):
@@ -73,17 +67,17 @@ class BaseAgent(ABC):
             return []
         return [tool.dict() for tool in self.tools if hasattr(tool, "dict")]
 
-    async def agenerate(self, input_text: str, messages: Optional[List[BaseMessage]] = None, **kwargs) -> AgentResponse:
+    async def agenerate(self, input_text: str, messages: Optional[List[BaseMessage]] = None, **kwargs):
         """异步生成回复"""
-        if_temp = False
+        # if_temp = False
 
         # 如果没有绑定工具，则绑定工具
-        if not self.tools:
+        if not self.tools and self.mcp_servers:
             await self._setup_mcp_client()
-            if_temp = True
+            # if_temp = True
 
-        tool_names = [getattr(self.tools[0], "name", str(self.tools[0]))]
-        # print(f"绑定工具: {tool_names}")  # 调试信息
+            tool_names = [getattr(self.tools[0], "name", str(self.tools[0]))]
+            # print(f"绑定工具: {tool_names}")  # 调试信息
         # 准备消息
         message = self._get_messages(input_text)
         # 异步执行代理
@@ -92,21 +86,6 @@ class BaseAgent(ABC):
         
         return response
 
-    # def generate(
-    #     self, query: str, messages: Optional[List[BaseMessage]] = None, **kwargs
-    # ) -> AgentResponse:
-    #     """同步生成响应"""
-    #     # 准备消息
-    #     message_history = messages or []
-    #     message_history.append(HumanMessage(content=query))
-
-    #     # 执行代理
-    #     response = self.agent.invoke({"messages": message_history})
-    #     return AgentResponse(content=response.content, raw_response=response)
-
-    # def __call__(self, query: str, **kwargs) -> str:
-    #     """便捷调用方法，直接返回内容字符串"""
-    #     return self.generate(query, **kwargs).content
 
     async def _setup_mcp_client(self):
         """设置MCP客户端并加载工具"""

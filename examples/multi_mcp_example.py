@@ -5,7 +5,6 @@
 """
 
 import os
-import sys
 import asyncio
 import random
 import logging  # 添加日志模块
@@ -21,11 +20,9 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("langchain").setLevel(logging.WARNING)
 
-# 把上级目录添加到sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from agents import ToolAgent
-from mcp_servers import get_available_servers, get_mcp_config
+# 使用绝对导入
+from agent_generator.agents import ToolAgent
+from agent_generator.mcp_servers import get_available_servers, get_mcp_config
 
 # 加载环境变量
 load_dotenv()
@@ -96,6 +93,7 @@ async def test_mcp_connection_with_agent():
     names = get_available_servers()
     # print(f"可用的MCP服务器: {names}")
     mcp_servers = get_mcp_config(names)
+    mcp_servers = None
     
     model = ChatOpenAI(
         model="gpt-4o-mini",
