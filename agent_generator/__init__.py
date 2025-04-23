@@ -5,9 +5,16 @@ Agent Generator
 """
 
 # 导出核心代理组件
-from agent_generator.agents import (
+from .agents import (
     BaseAgent,
     ToolAgent
+)
+
+from .mcp_servers import (
+    discover_mcp_servers,
+    get_mcp_config,
+    generate_mcp_config_file,
+    get_available_servers
 )
 
 __version__ = "0.1.0"

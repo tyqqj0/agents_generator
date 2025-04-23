@@ -11,10 +11,7 @@ from .tool_agent import ToolAgent
 # from .agents.chat_agent import ChatAgent
 # from .agents.router_agent import RouterAgent
 from .templates.prompts import (
-    DEFAULT_CHAT_PROMPT,
     DEFAULT_TOOL_PROMPT,
-    DEFAULT_RESEARCH_PROMPT,
-    DEFAULT_CODE_PROMPT,
 )
 # 导出MCP相关功能
 try:
