@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   config_manager.py
+@Time    :   2025/04/23 14:33:58
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
 """
 MCP服务器配置管理器
 
@@ -103,9 +117,11 @@ def get_mcp_config(
 
     configs = {}
     for name in server_names:
+        # print(f"加载服务器 {name} 的配置")
         try:
             config = load_server_config(name)
             configs[name] = config
+            # print(config)
         except (ImportError, ValueError) as e:
             print(f"警告: 无法加载服务器 {name} 的配置: {e}")
 

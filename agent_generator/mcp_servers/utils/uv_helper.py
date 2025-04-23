@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   uv_helper.py
+@Time    :   2025/04/23 14:34:50
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
 """
 UV路径辅助工具
 

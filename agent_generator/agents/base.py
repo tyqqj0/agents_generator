@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   base.py
+@Time    :   2025/04/23 14:33:17
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
 from typing import List, Dict, Any, Optional, Union, Set
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.language_models import BaseChatModel

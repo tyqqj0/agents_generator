@@ -1,3 +1,18 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   __init__.py
+@Time    :   2025/04/23 14:33:36
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
+
 """
 Agent模块包
 
@@ -6,7 +21,7 @@ Agent模块包
 
 from .base import BaseAgent
 from .tool_agent import ToolAgent
-
+from .react_agent import ReactAgent
 # 注释掉不存在的导入
 # from .agents.chat_agent import ChatAgent
 # from .agents.router_agent import RouterAgent
@@ -34,6 +49,7 @@ try:
     __all__ = [
         "BaseAgent",
         "ToolAgent",
+        "ReactAgent",
         "MultiServerMCPClient",
         "load_mcp_tools",
         "create_mcp_client",

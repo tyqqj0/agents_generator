@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   template_generator.py
+@Time    :   2025/04/23 14:34:41
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
 """
 MCP服务器模板生成器
 

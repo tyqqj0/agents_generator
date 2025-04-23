@@ -9,9 +9,20 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from mcp.server.fastmcp import FastMCP
-
+import logging
 # 初始化 FastMCP server
 mcp = FastMCP("weather")
+
+import dotenv
+dotenv.load_dotenv()
+
+# 配置日志
+if os.environ.get("LOGGING_MODE") == "off":
+    logging.basicConfig(level=logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+else:
+    logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("weather-mcp-server")
 
 # 服务器配置信息
 SERVER_NAME = "weather"

@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   test_calculator_client.py
+@Time    :   2025/04/23 14:35:12
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
 import asyncio
 import sys
 import os

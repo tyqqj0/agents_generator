@@ -1,3 +1,18 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   tool_agent.py
+@Time    :   2025/04/23 14:33:30
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
+
+
 from typing import List, Dict, Any, Optional, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import BaseTool

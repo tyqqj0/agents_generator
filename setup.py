@@ -1,3 +1,16 @@
+# -*- coding: utf-8 -*-
+"""
+@File    :   setup.py
+@Time    :   2025/04/23 14:35:43
+@Author  :   tyqqj
+@Version :   1.0
+@Contact :   tyqqj0@163.com
+@Desc    :   None
+"""
+
+
+
+
 from setuptools import setup, find_packages
 
 setup(
