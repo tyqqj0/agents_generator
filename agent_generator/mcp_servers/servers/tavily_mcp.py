@@ -22,7 +22,7 @@ dotenv.load_dotenv()
 # 配置日志
 if os.environ.get("LOGGING_MODE") == "off":
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    # logging.getLogger("httpx").setLevel(logging.WARNING)
 else:
     logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tavily-mcp-server")

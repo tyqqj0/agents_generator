@@ -22,7 +22,8 @@ Agent Generator
 from .agents import (
     BaseAgent,
     ToolAgent,
-    ReactAgent
+    ReactAgent,
+    CriticAgent
 )
 
 from .mcp_servers import (

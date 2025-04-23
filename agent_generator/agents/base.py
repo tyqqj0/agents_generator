@@ -19,6 +19,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 import asyncio
 from contextlib import AsyncExitStack
+import base64
 
 # 新增导入MCP工具相关库
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -71,9 +72,35 @@ class BaseAgent(ABC):
         """创建代理, 子类必须实现"""
         pass
 
-    def _get_messages(self, input_text: str) -> List[BaseMessage]:
-        """获取消息列表，子类可以覆盖以自定义消息构建逻辑"""
-        return [HumanMessage(content=input_text)]
+    def _get_messages(self, input_data: Union[str, Dict[str, Any], List[Dict[str, Any]]]) -> List[BaseMessage]:
+        """
+        获取消息列表，支持文本和多模态输入
+        
+        Args:
+            input_data: 输入数据
+                - 字符串: 作为纯文本消息处理
+                - 字典: 包含多模态内容的消息，可以是图像或其他媒体类型
+                - 列表: 多个内容块组成的消息
+        
+        Returns:
+            List[BaseMessage]: 消息列表
+        """
+        # 如果是字符串，作为纯文本消息处理
+        if isinstance(input_data, str):
+            return [HumanMessage(content=input_data)]
+        
+        # 如果是字典或列表，作为多模态消息处理
+        elif isinstance(input_data, (dict, list)):
+            # 将单个字典转为列表处理
+            if isinstance(input_data, dict):
+                content = [input_data]
+            else:
+                content = input_data
+                
+            return [HumanMessage(content=content)]
+        
+        # 默认情况，尝试转为字符串处理
+        return [HumanMessage(content=str(input_data))]
     
     def _get_tools_for_llm(self) -> List[Dict[str, Any]]:
         """获取适合LLM使用的工具定义，子类可以覆盖以自定义工具构建逻辑"""
@@ -81,9 +108,52 @@ class BaseAgent(ABC):
             return []
         return [tool.dict() for tool in self.tools if hasattr(tool, "dict")]
 
-    async def agenerate(self, input_text: str, messages: Optional[List[BaseMessage]] = None, **kwargs):
-        """异步生成回复"""
-        # if_temp = False
+    async def agenerate(self, input_data: Union[str, Dict[str, Any], List[Dict[str, Any]]], image_path: Optional[str] = None, image_url: Optional[str] = None, messages: Optional[List[BaseMessage]] = None, **kwargs):
+        """
+        异步生成回复，支持文本和图像输入
+        
+        Args:
+            input_data: 输入数据
+                - 字符串: 纯文本提示
+                - 字典: 包含多模态内容的消息数据
+                - 列表: 多个内容块组成的消息
+            image_path: 可选，本地图像文件路径
+            image_url: 可选，图像URL
+            messages: 可选，已有的消息历史
+            **kwargs: 其他参数
+        
+        Returns:
+            模型响应
+        """
+        # 如果提供了图像，构建多模态输入
+        if image_path or image_url:
+            # 构建基本文本内容
+            content = [{"type": "text", "text": input_data if isinstance(input_data, str) else str(input_data)}]
+            
+            # 如果有本地图像路径，读取并编码为base64
+            if image_path:
+                try:
+                    with open(image_path, "rb") as img_file:
+                        image_data = base64.b64encode(img_file.read()).decode("utf-8")
+                        content.append({
+                            "type": "image",
+                            "source_type": "base64",
+                            "mime_type": "image/jpeg",  # 可根据实际文件类型调整
+                            "data": image_data
+                        })
+                except Exception as e:
+                    raise ValueError(f"读取图像文件失败: {str(e)}")
+            
+            # 如果有图像URL
+            elif image_url:
+                content.append({
+                    "type": "image",
+                    "source_type": "url",
+                    "url": image_url
+                })
+            
+            # 使用多模态内容
+            input_data = content
 
         # 如果没有绑定工具，则绑定工具
         if not self.tools and self.mcp_servers:
@@ -93,7 +163,7 @@ class BaseAgent(ABC):
             tool_names = [getattr(self.tools[0], "name", str(self.tools[0]))]
             # print(f"绑定工具: {tool_names}")  # 调试信息
         # 准备消息
-        message = self._get_messages(input_text)
+        message = self._get_messages(input_data)
         # 异步执行代理
         response = await self.agent.ainvoke({"messages": message})
 

@@ -22,11 +22,15 @@ Agent模块包
 from .base import BaseAgent
 from .tool_agent import ToolAgent
 from .react_agent import ReactAgent
+from .critic_agent import CriticAgent
 # 注释掉不存在的导入
 # from .agents.chat_agent import ChatAgent
 # from .agents.router_agent import RouterAgent
 from .templates.prompts import (
     DEFAULT_TOOL_PROMPT,
+    DEFAULT_CRITIC_SYSTEM_PROMPT,
+    DEFAULT_CRITIQUE_PROMPT,
+    DEFAULT_CORRECTION_PROMPT,
 )
 # 导出MCP相关功能
 try:
@@ -50,15 +54,26 @@ try:
         "BaseAgent",
         "ToolAgent",
         "ReactAgent",
+        "CriticAgent",
         "MultiServerMCPClient",
         "load_mcp_tools",
         "create_mcp_client",
+        "DEFAULT_TOOL_PROMPT",
+        "DEFAULT_CRITIC_SYSTEM_PROMPT",
+        "DEFAULT_CRITIQUE_PROMPT",
+        "DEFAULT_CORRECTION_PROMPT",
     ]
 except ImportError:
     # 如果未安装langchain_mcp_adapters，则仅导出核心组件
     __all__ = [
         "BaseAgent",
-        "ToolAgent"
+        "ToolAgent",
+        "ReactAgent",
+        "CriticAgent",
+        "DEFAULT_TOOL_PROMPT",
+        "DEFAULT_CRITIC_SYSTEM_PROMPT",
+        "DEFAULT_CRITIQUE_PROMPT",
+        "DEFAULT_CORRECTION_PROMPT",
     ]
 
 # 包版本信息
