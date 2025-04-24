@@ -73,17 +73,26 @@ async def compare_agents(prompt, image_url=None):
         result = await critic_agent.agenerate(prompt, image_url=image_url)
         
         # 获取消息历史(这里的messages已经是清理过的，只包含用户输入和AI回答)
-        messages = result.get("messages", [])
+        messages = result.get("current_answer", [])
         
         # 直接打印整个交互历史
         # print("用户提问和AI回答历史:")
         # for msg in messages:
         #     print(f"{msg.type.upper()}: {msg.content}")
         
-        # # 如果你只想打印最终结果，可以使用:
-        last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
-        if last_ai:
-            print(f"最终回答: {last_ai.content}")
+        # 打印所有消息的type
+        print("所有消息的type:")
+        for msg in messages:
+            print(msg.type)
+            
+        print("所有消息的content:")
+        for msg in messages:
+            print(msg.content)
+        
+        # # # 如果你只想打印最终结果，可以使用:
+        # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
+        # if last_ai:
+        #     print(f"最终回答: {last_ai.content}")
         
         # # 打印迭代信息
         # print(f"\n完成状态: {result.get('is_complete', False)}")

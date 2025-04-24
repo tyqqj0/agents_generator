@@ -26,7 +26,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class CriticState(TypedDict):
@@ -124,7 +124,7 @@ class CriticAgent(BaseAgent):
         # --- 节点定义 ---
 
         def initialize(state: CriticState):
-            logger.info("Node: initialize")
+            logger.info("Node: initialize", color="green")
             """根据用户输入生成初始回答"""
             messages = state["messages"]
             
@@ -174,6 +174,8 @@ class CriticAgent(BaseAgent):
             
             logger.info(f"Initial response received. Content length: {len(response.content) if isinstance(response.content, str) else 'Non-string content'}")
             
+            # 用logger比info更高级的
+            logger.debug(f"Initial response preview: {str(response.content)[:100]}...")
             # 同时，还应该修改图结构，确保tools节点执行后不再返回initialize节点
             return {
                 "messages": [user_message, response] if user_message else [response],
@@ -187,7 +189,7 @@ class CriticAgent(BaseAgent):
             }
 
         def verify(state: CriticState):
-            logger.info("Node: verify")
+            logger.info("Node: verify", color="green")
             """验证当前答案"""
             messages = state["messages"].copy()
             current_answer = state["current_answer"]
@@ -231,7 +233,7 @@ class CriticAgent(BaseAgent):
             }
 
         def correct(state: CriticState):
-            logger.info("Node: correct")
+            logger.info("Node: correct", color="green")
             """修正答案"""
             messages = state["messages"].copy()
             current_answer = state["current_answer"]
