@@ -76,18 +76,18 @@ async def compare_agents(prompt, image_url=None):
         messages = result.get("messages", [])
         
         # 直接打印整个交互历史
-        print("用户提问和AI回答历史:")
-        for msg in messages:
-            print(f"{msg.type.upper()}: {msg.content}")
+        # print("用户提问和AI回答历史:")
+        # for msg in messages:
+        #     print(f"{msg.type.upper()}: {msg.content}")
         
-        # 如果你只想打印最终结果，可以使用:
-        # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
-        # if last_ai:
-        #     print(f"最终回答: {last_ai.content}")
+        # # 如果你只想打印最终结果，可以使用:
+        # # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
+        # # if last_ai:
+        # #     print(f"最终回答: {last_ai.content}")
         
-        # 打印迭代信息
-        print(f"\n完成状态: {result.get('is_complete', False)}")
-        print(f"迭代次数: {result.get('iterations', 0)}")
+        # # 打印迭代信息
+        # print(f"\n完成状态: {result.get('is_complete', False)}")
+        # print(f"迭代次数: {result.get('iterations', 0)}")
         
         # 打印其他可能有用的状态信息
         if 'critiques' in result and result['critiques']:
