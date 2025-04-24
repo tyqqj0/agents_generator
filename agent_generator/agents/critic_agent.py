@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 @File    :   critic_agent.py
@@ -128,30 +127,54 @@ class CriticAgent(BaseAgent):
             logger.info("Node: initialize")
             """根据用户输入生成初始回答"""
             messages = state["messages"]
-            user_message = next((msg for msg in messages if msg.type == "human"), None)
-            original_input = user_message.content if user_message else None
-            logger.info(f"Original input type: {type(original_input)}")
             
-            system_msg = next((msg for msg in messages if msg.type == "system"), None)
-            system_prompt = system_msg.content if system_msg else self.system_prompt
+            # 检查是否是从工具节点返回
+            is_from_tool = any(msg.type == "tool" for msg in messages)
             
-            initial_messages = []
-            if not system_msg:
-                logger.info("Adding system prompt.")
-                initial_messages.append(SystemMessage(content=system_prompt))
+            if not is_from_tool:
+                # 首次执行initialize节点
+                user_message = next((msg for msg in messages if msg.type == "human"), None)
+                original_input = user_message.content if user_message else None
+                logger.info(f"Original input type: {type(original_input)}")
+                
+                system_msg = next((msg for msg in messages if msg.type == "system"), None)
+                system_prompt = system_msg.content if system_msg else self.system_prompt
+                
+                initial_messages = []
+                if not system_msg:
+                    logger.info("Adding system prompt.")
+                    initial_messages.append(SystemMessage(content=system_prompt))
+                else:
+                    initial_messages.append(system_msg)
+                
+                if user_message:
+                    initial_messages.append(user_message)
             else:
-                initial_messages.append(system_msg)
+                # 从工具节点返回，需要处理工具结果
+                tool_messages = [msg for msg in messages if msg.type == "tool"]
+                user_message = next((msg for msg in messages if msg.type == "human"), None)
+                original_input = user_message.content if user_message else None
+                system_prompt = state.get("system_prompt", self.system_prompt)
+                
+                # 构建包含工具结果的消息
+                initial_messages = [SystemMessage(content=system_prompt)]
+                if user_message:
+                    initial_messages.append(user_message)
+                # 添加最近的工具结果
+                initial_messages.extend(tool_messages[-3:])
             
-            if user_message:
-                initial_messages.append(user_message)
-            
+            # 调用模型生成回答
             logger.info(f"Invoking model for initial answer with {len(initial_messages)} messages.")
             response = bound_model.invoke(initial_messages)
+            
+            # 检查响应是否为空
+            if not response.content or (isinstance(response.content, str) and not response.content.strip()):
+                logger.warning("Empty response received, creating default content")
+                response.content = "无法生成回答，请尝试重新提问或提供更多信息。"
+            
             logger.info(f"Initial response received. Content length: {len(response.content) if isinstance(response.content, str) else 'Non-string content'}")
             
-            logger.info(f"Initial response: {response.content}")
-            
-            # Return only user message and AI response for the main message history
+            # 同时，还应该修改图结构，确保tools节点执行后不再返回initialize节点
             return {
                 "messages": [user_message, response] if user_message else [response],
                 "current_answer": response.content,
@@ -159,7 +182,7 @@ class CriticAgent(BaseAgent):
                 "iterations": 0,
                 "is_complete": False,
                 "original_input": original_input,
-                "step": "initialize",
+                "step": "verify",  # 修改为verify，确保下一步是验证而不是再次初始化
                 "system_prompt": system_prompt
             }
 
@@ -307,7 +330,16 @@ class CriticAgent(BaseAgent):
                 "correct": "correct"        # If correct node called tools, go back to correct
             }
         )
+
         logger.info("Added conditional edges from 'tools' back to the triggering node.")
+                
+        # graph_builder.add_conditional_edges(
+        #     "tools",
+        #     lambda x: "verify",  # 直接返回verify，不再根据step返回
+        #     {
+        #         "verify": "verify"  # 工具执行后总是进入verify节点
+        #     }
+        # )
 
         compiled_graph = graph_builder.compile()
         logger.info("Graph compilation complete.")

@@ -28,7 +28,7 @@ dotenv.load_dotenv()
 api_name = "OPENAI_API_KEY"
 api_key = os.environ.get(api_name)
 base_url = os.environ.get("BASE_URL")
-model = "gpt-4o-mini"
+model = "gpt-4o"
 
 
 
@@ -81,17 +81,17 @@ async def compare_agents(prompt, image_url=None):
         #     print(f"{msg.type.upper()}: {msg.content}")
         
         # # 如果你只想打印最终结果，可以使用:
-        # # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
-        # # if last_ai:
-        # #     print(f"最终回答: {last_ai.content}")
+        last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
+        if last_ai:
+            print(f"最终回答: {last_ai.content}")
         
         # # 打印迭代信息
         # print(f"\n完成状态: {result.get('is_complete', False)}")
         # print(f"迭代次数: {result.get('iterations', 0)}")
         
         # 打印其他可能有用的状态信息
-        if 'critiques' in result and result['critiques']:
-            print(f"最后批评: {result['critiques'][:100]}...")
+        # if 'critiques' in result and result['critiques']:
+        #     print(f"最后批评: {result['critiques'][:100]}...")
 
 if __name__ == "__main__":
     # asyncio.run(tool_agent_example())
