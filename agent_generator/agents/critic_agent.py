@@ -23,27 +23,16 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-# 步骤标记 (根据 use_markers 开关动态调整)
-STEP_MARKERS_DEFAULT = {
-    "input": "[输入]",
-    "initial_answer": "[初始回答]",
-    "verify_request": "[验证请求]",
-    "critique": "[批评意见]",
-    "correction_request": "[修正请求]",
-    "corrected_answer": "[修正回答]",
-    "complete": "[完成]"
-}
-
 class CriticState(TypedDict):
-    """CRITIC代理的状态定义"""
-    messages: Annotated[list, add_messages]  # 完整内部消息历史
-    current_answer: Union[str, list] # 当前答案（可能是多模态）
-    critiques: Union[str, list] # 当前批评意见（可能是多模态）
+    """简化的CRITIC代理状态定义"""
+    messages: Annotated[list, add_messages]  # 消息历史
+    current_answer: Union[str, list]  # 当前答案
+    critiques: Union[str, list]  # 当前批评意见
     iterations: int  # 当前迭代次数
     is_complete: bool  # 是否完成
-    original_input: Union[str, Dict[str, Any], List[Dict[str, Any]]]  # 原始用户输入，支持多模态
+    original_input: Union[str, Dict[str, Any], List[Dict[str, Any]]]  # 原始用户输入
     step: str  # 当前步骤
-    user_facing_messages: List[BaseMessage]  # 用户可见的消息历史
+    system_prompt: str  # 系统提示，用于各节点构建提示
 
 
 class CriticAgent(BaseAgent):
@@ -67,7 +56,7 @@ class CriticAgent(BaseAgent):
         tools: Optional[List[BaseTool]] = None,
         mcp_servers: Optional[Dict[str, Dict[str, Any]]] = None,
         max_iterations: int = 3,
-        use_markers: bool = True,  # 是否使用标记
+        use_markers: bool = False,  # 已废弃参数，保留以兼容旧代码
         # 向后兼容的mcp_config参数
         mcp_config: Optional[Dict[str, Any]] = None,
     ):
@@ -82,7 +71,7 @@ class CriticAgent(BaseAgent):
             tools: 预定义的工具列表
             mcp_servers: 多MCP服务器配置字典
             max_iterations: 最大迭代次数
-            use_markers: 是否使用标记（如[输入]、[初始回答]等）
+            use_markers: 是否使用标记（已废弃，保留以兼容旧代码）
             mcp_config: 单个MCP配置字典（向后兼容）
         """
         # 处理兼容性
@@ -96,18 +85,9 @@ class CriticAgent(BaseAgent):
 
         super().__init__(name, model, tools=tools, mcp_servers=mcp_servers)
         self.system_prompt = system_prompt or DEFAULT_CRITIC_SYSTEM_PROMPT
-        
-        # 处理标记
-        self.use_markers = use_markers
-        self.step_markers = STEP_MARKERS_DEFAULT.copy() # 每个实例有自己的标记副本
-        if use_markers:
-            markers_explanation = "\n请注意每个步骤的标记:\n" + "\n".join([f"- {v} 表示{k}" for k, v in self.step_markers.items()])
-            self.system_prompt += markers_explanation
-        else:
-            self.step_markers = {k: "" for k in self.step_markers}
-
         self.temperature = temperature
         self.max_iterations = max_iterations
+        # 忽略use_markers参数
 
 
     def _create_agent(self) -> CompiledGraph:
@@ -138,243 +118,211 @@ class CriticAgent(BaseAgent):
 
         def initialize(state: CriticState):
             """根据用户输入生成初始回答"""
+            # 提取用户输入
             messages = state["messages"]
+            user_message = next((msg for msg in messages if msg.type == "human"), None)
+            original_input = user_message.content if user_message else None
             
-            # 提取原始输入
-            original_input = next((msg.content for msg in messages if msg.type == "human"), None)
-
-            # 确保有系统消息
-            if not messages or messages[0].type != "system":
-                messages = [SystemMessage(content=self.system_prompt)] + (messages or [])
-
-            # 标记用户输入
-            marked_messages = messages[:1] # Keep system prompt
-            for msg in messages[1:]:
-                if msg.type == "human" and isinstance(msg.content, str):
-                     content = msg.content
-                     if self.use_markers and not content.startswith(self.step_markers["input"]):
-                          content = f"{self.step_markers['input']} {content}"
-                     marked_messages.append(HumanMessage(content=content))
+            # 添加系统提示（如果不存在）
+            system_msg = next((msg for msg in messages if msg.type == "system"), None)
+            system_prompt = system_msg.content if system_msg else self.system_prompt
+            
+            if not system_msg:
+                messages = [SystemMessage(content=system_prompt)] + messages
+            
+            # 确保不会重复添加系统消息
+            cleaned_messages = []
+            has_system = False
+            for msg in messages:
+                if msg.type == "system":
+                    if not has_system:  # 只添加第一个系统消息
+                        cleaned_messages.append(msg)
+                        has_system = True
                 else:
-                     marked_messages.append(msg) # Keep other types as is
-
-            user_facing_messages = marked_messages.copy()
-
-            # 调用LLM生成初始回答
-            response = llm_with_tools.invoke(marked_messages) # Use marked messages for invocation
+                    cleaned_messages.append(msg)
             
-            # 处理回答并标记
-            current_answer = response.content
-            if isinstance(current_answer, str):
-                if self.use_markers and not current_answer.startswith(self.step_markers["initial_answer"]):
-                    current_answer = f"{self.step_markers['initial_answer']} {current_answer}"
-                marked_response = AIMessage(content=current_answer)
-            else:
-                # 多模态回答不加标记
-                marked_response = response
-
-            # 更新用户可见消息
-            user_facing_messages.append(marked_response)
+            # 检查历史消息中是否有工具调用结果
+            # 每当执行初始化节点时，先清理历史中的验证和修正请求消息
+            if len(cleaned_messages) > 2:  # 有系统消息、用户消息，再加上可能的其他消息
+                for i in range(len(cleaned_messages) - 1, 1, -1):  # 从后向前，跳过系统和第一个用户消息
+                    msg = cleaned_messages[i]
+                    # 保留工具结果消息，但移除验证和修正请求和回复
+                    if msg.type == "human" and any(keyword in str(msg.content) for keyword in 
+                                                ["验证", "批评", "分析以下输出", "根据以下批评"]):
+                        # 找到验证或修正请求，移除它和它后面的AI回复
+                        cleaned_messages.pop(i)
+                        if i < len(cleaned_messages) and cleaned_messages[i].type == "ai":
+                            cleaned_messages.pop(i)
             
+            # 调用LLM生成初始答案
+            response = llm_with_tools.invoke(cleaned_messages)
+            
+            # 添加到消息历史
+            cleaned_messages.append(response)
+            
+            # 返回状态
             return {
-                "messages": marked_messages + [marked_response], # Store marked messages and response internally
-                "current_answer": response.content, # Store raw content
+                "messages": cleaned_messages,  # 更新后的消息历史
+                "current_answer": response.content,  # 存储当前答案
                 "critiques": "",
                 "iterations": 0,
                 "is_complete": False,
                 "original_input": original_input,
                 "step": "initialize",
-                "user_facing_messages": user_facing_messages
+                "system_prompt": system_prompt  # 存储系统提示
             }
 
         def verify(state: CriticState):
-            """使用工具(可选)验证当前答案，生成批评意见"""
-            current_answer_raw = state["current_answer"] # Use raw answer
-            iterations = state["iterations"]
-            messages = state["messages"].copy() # Full internal history
+            """验证当前答案"""
+            # 获取当前状态
+            messages = state["messages"]
+            current_answer = state["current_answer"]
             original_input = state["original_input"]
-            user_facing_messages = state["user_facing_messages"].copy()
-
-            # --- 处理工具调用返回的结果 ---
-            last_message = messages[-1]
-            if isinstance(last_message, ToolMessage):
-                 # 如果上一步是工具调用，将其结果整合到验证提示中
-                 tool_output = last_message.content
-                 # (这里可以根据需要，将工具结果更智能地融入提示)
-                 critique_context = f"基于以下工具调用结果:\n{tool_output}\n\n请继续验证。"
-                 print(f"Debug: Integrating tool result into verification: {tool_output}")
-            else:
-                 critique_context = ""
-
-            # --- 准备验证提示 ---
-            input_display = "多模态输入..." if not isinstance(original_input, str) else original_input
-            current_output_display = "多模态回答..." if not isinstance(current_answer_raw, str) else current_answer_raw
+            system_prompt = state["system_prompt"]
             
-            verify_prompt_template = DEFAULT_CRITIQUE_PROMPT
-            verify_prompt_content = verify_prompt_template.format(
-                input=input_display,
-                current_output=current_output_display
+            # 构建验证提示
+            # 获取最近的工具调用消息，如果有的话
+            tool_results = [msg for msg in messages if msg.type == "tool"][-3:] if messages else []
+            tool_context = ""
+            if tool_results:
+                tool_outputs = [f"工具调用结果: {tool.content}" for tool in tool_results]
+                tool_context = "根据以下工具调用结果:\n" + "\n".join(tool_outputs) + "\n\n"
+            
+            # 格式化验证提示
+            verify_prompt = tool_context + DEFAULT_CRITIQUE_PROMPT.format(
+                input=original_input if isinstance(original_input, str) else "多模态输入...",
+                current_output=current_answer if isinstance(current_answer, str) else "多模态回答..."
             )
-            # 添加工具结果上下文
-            verify_prompt_content += f"\n{critique_context}"
-
-            # 添加标记
-            if self.use_markers:
-                verify_prompt_content = f"{self.step_markers['verify_request']} {verify_prompt_content}"
             
-            # 创建验证请求 (只用于LLM调用，不加入user_facing)
-            verify_request_message = HumanMessage(content=verify_prompt_content)
+            # 创建验证请求消息
+            verify_request = HumanMessage(content=verify_prompt)
             
-            # 调用模型进行验证
-            # 使用完整的内部消息历史 + 新的验证请求
-            verification_response = llm_with_tools.invoke(messages + [verify_request_message])
+            # 为验证请求创建新的消息列表，避免历史消息过长
+            verify_messages = [
+                SystemMessage(content=system_prompt),
+                verify_request
+            ]
             
-            # --- 处理验证结果 ---
-            critiques_raw = verification_response.content
-            if isinstance(critiques_raw, str):
-                if self.use_markers and not critiques_raw.startswith(self.step_markers["critique"]):
-                     critiques_marked = f"{self.step_markers['critique']} {critiques_raw}"
-                else:
-                     critiques_marked = critiques_raw
-                critique_message_for_history = AIMessage(content=critiques_marked) # Marked for internal history
-                critique_message_for_user = AIMessage(content=critiques_raw) # Raw for potential user display later? (Decide later)
-            else:
-                # 多模态批评
-                critiques_marked = critiques_raw
-                critique_message_for_history = verification_response
-                critique_message_for_user = verification_response # Raw
-
+            # 调用LLM进行验证
+            verification_response = llm_with_tools.invoke(verify_messages)
+            
+            # 不修改主消息列表，只返回批评结果
             return {
-                # Add verify request and response to internal history
-                "messages": messages + [verify_request_message, critique_message_for_history],
-                "critiques": critiques_raw, # Store raw critique content
-                "step": "verify",
-                # user_facing_messages 不变，直到修正或完成
-                "user_facing_messages": user_facing_messages
+                "critiques": verification_response.content,
+                "step": "verify"
             }
 
         def correct(state: CriticState):
-            """根据批评意见，使用工具(可选)修正答案"""
-            current_answer_raw = state["current_answer"]
-            critiques_raw = state["critiques"]
-            iterations = state["iterations"]
-            messages = state["messages"].copy()
+            """修正答案"""
+            # 获取当前状态
+            messages = state["messages"]
+            current_answer = state["current_answer"]
+            critiques = state["critiques"]
             original_input = state["original_input"]
-            user_facing_messages = state["user_facing_messages"].copy()
-
-            # --- 处理工具调用返回的结果 ---
-            last_message = messages[-1]
-            if isinstance(last_message, ToolMessage):
-                 tool_output = last_message.content
-                 correction_context = f"基于以下工具调用结果进行修正:\n{tool_output}\n\n"
-                 print(f"Debug: Integrating tool result into correction: {tool_output}")
-            else:
-                 correction_context = ""
-
-            # --- 准备修正提示 ---
-            input_display = "多模态输入..." if not isinstance(original_input, str) else original_input
-            current_output_display = "多模态回答..." if not isinstance(current_answer_raw, str) else current_answer_raw
-            critiques_display = "多模态批评..." if not isinstance(critiques_raw, str) else critiques_raw
-
-            correction_prompt_template = DEFAULT_CORRECTION_PROMPT
-            correction_prompt_content = correction_prompt_template.format(
-                input=input_display,
-                current_output=current_output_display,
-                critiques=critiques_display
+            iterations = state["iterations"]
+            system_prompt = state["system_prompt"]
+            
+            # 构建修正提示
+            # 获取最近的工具调用消息，如果有的话
+            tool_results = [msg for msg in messages if msg.type == "tool"][-3:] if messages else []
+            tool_context = ""
+            if tool_results:
+                tool_outputs = [f"工具调用结果: {tool.content}" for tool in tool_results]
+                tool_context = "根据以下工具调用结果:\n" + "\n".join(tool_outputs) + "\n\n"
+            
+            # 格式化修正提示
+            correction_prompt = tool_context + DEFAULT_CORRECTION_PROMPT.format(
+                input=original_input if isinstance(original_input, str) else "多模态输入...",
+                current_output=current_answer if isinstance(current_answer, str) else "多模态回答...",
+                critiques=critiques if isinstance(critiques, str) else "多模态批评..."
             )
-            # 添加工具结果上下文
-            correction_prompt_content = correction_context + correction_prompt_content
-
-            # 添加标记
-            if self.use_markers:
-                correction_prompt_content = f"{self.step_markers['correction_request']} {correction_prompt_content}"
-
-            # 创建修正请求 (只用于LLM调用，不加入user_facing)
-            correction_request_message = HumanMessage(content=correction_prompt_content)
-
-            # 调用模型进行修正
-            correction_response = llm_with_tools.invoke(messages + [correction_request_message])
-
-            # --- 处理修正结果 ---
-            corrected_answer_raw = correction_response.content
-            if isinstance(corrected_answer_raw, str):
-                 if self.use_markers and not corrected_answer_raw.startswith(self.step_markers["corrected_answer"]):
-                      corrected_answer_marked = f"{self.step_markers['corrected_answer']} {corrected_answer_raw}"
-                 else:
-                      corrected_answer_marked = corrected_answer_raw
-                 correction_message_for_history = AIMessage(content=corrected_answer_marked)
-                 correction_message_for_user = AIMessage(content=corrected_answer_raw) # Raw for user
+            
+            # 创建修正请求消息
+            correction_request = HumanMessage(content=correction_prompt)
+            
+            # 为修正请求创建新的消息列表，避免历史消息过长
+            correction_messages = [
+                SystemMessage(content=system_prompt),
+                correction_request
+            ]
+            
+            # 调用LLM进行修正
+            correction_response = llm_with_tools.invoke(correction_messages)
+            
+            # 更新用户可见消息历史，替换最后一条AI消息
+            updated_messages = messages.copy()
+            # 找到最后一条非工具AI消息进行替换
+            ai_indices = [i for i, msg in enumerate(updated_messages) if msg.type == "ai" and not isinstance(msg, ToolMessage)]
+            if ai_indices:
+                last_ai_index = ai_indices[-1]
+                updated_messages[last_ai_index] = correction_response
             else:
-                 # 多模态修正
-                 corrected_answer_marked = corrected_answer_raw
-                 correction_message_for_history = correction_response
-                 correction_message_for_user = correction_response # Raw
-
-            # 更新用户可见消息 (替换上一个AI消息)
-            if user_facing_messages and user_facing_messages[-1].type == "ai":
-                 user_facing_messages[-1] = correction_message_for_user
-            else:
-                 user_facing_messages.append(correction_message_for_user)
-
+                # 如果没有找到AI消息，就追加
+                updated_messages.append(correction_response)
+            
+            # 返回更新状态
             return {
-                # Add correction request and response to internal history
-                "messages": messages + [correction_request_message, correction_message_for_history],
-                "current_answer": corrected_answer_raw, # Store raw corrected answer
+                "messages": updated_messages,  # 更新消息历史
+                "current_answer": correction_response.content,  # 更新当前答案
                 "iterations": iterations + 1,
-                "step": "correct",
-                "user_facing_messages": user_facing_messages # Updated user messages
+                "step": "correct"
             }
 
         # --- 图构建 ---
-
+        
         # 添加节点
         graph_builder.add_node("initialize", initialize)
         graph_builder.add_node("verify", verify)
         graph_builder.add_node("correct", correct)
+        
+        # 创建工具节点(使用默认的messages_key)
         tool_node = ToolNode(tools=tools)
         graph_builder.add_node("tools", tool_node)
         
-        # 注意：'complete' 节点现在由 END 代替
-
         # 设置入口点
         graph_builder.set_entry_point("initialize")
 
-        # 添加边
+        # 添加边和条件
         
-        # 初始化后总是去验证
-        graph_builder.add_edge("initialize", "verify")
-
-        # Conditional edge after Verify: Decide tools, correct, or complete
+        # 初始化/修正后检查工具调用
+        graph_builder.add_conditional_edges(
+            "initialize",
+            tools_condition,
+            {
+                "tools": "tools",
+                "__end__": "verify"
+            }
+        )
+        
+        # 验证节点的条件分支
         graph_builder.add_conditional_edges(
             "verify",
-            # This custom function checks for tool calls first, then decides correct/complete
             self._check_verify_output,
             {
-                "tools": "tools",      # Call tools if needed
-                "correct": "correct",  # Go to correct node if decision is "correct"
-                "complete": END         # End graph if decision is "complete"
+                "tools": "tools",    
+                "correct": "correct",
+                "complete": END        
             }
         )
         
-        # Conditional edge after Correct: Decide tools or go back to verify
+        # 修正节点的条件分支
         graph_builder.add_conditional_edges(
             "correct",
-            # This custom function checks for tool calls first, then decides the next step
-            self._check_correct_output,
+            tools_condition,
             {
-                "tools": "tools",      # Call tools if needed
-                "continue": "verify"   # Otherwise, go back to verify the corrected answer
+                "tools": "tools",
+                "__end__": "verify"
             }
         )
-
-        # Edges from tools node - route back to the appropriate node
+        
+        # 工具节点返回后的处理
         graph_builder.add_conditional_edges(
             "tools",
-            lambda state: state["step"], # Route based on the step *before* tool call
+            lambda x: x["step"],
             {
-                "verify": "verify",   # If verify called tools, go back to verify
-                "correct": "correct", # If correct called tools, go back to correct
-                # Add other potential callers if needed (e.g., initialize if needed)
+                "initialize": "initialize",
+                "verify": "verify",
+                "correct": "correct"
             }
         )
 
@@ -383,58 +331,44 @@ class CriticAgent(BaseAgent):
 
     # --- Helper methods for conditional edges ---
     def _check_verify_output(self, state: CriticState):
-        """Checks verify output: call tools or decide correct/complete"""
-        # First, check if the last message from 'verify' node requests tool usage
+        """检查验证输出，决定调用工具、修正或完成"""
+        # 首先检查是否需要调用工具
         if tools_condition(state) == "tools":
-             # Update step marker *before* going to tools
-             state["step"] = "verify" # Mark that 'verify' triggered the tool call
-             print("Debug: Verify output requires tools.")
+             # 更新步骤标记
+             state["step"] = "verify" # 标记是verify触发了工具调用
+             # print("Debug: Verify output requires tools.")
              return "tools"
         else:
-             # No tools needed, directly decide whether to correct or complete
-             # We need to call the logic originally in the should_continue node here
-             decision = self._should_continue_logic(state) # Call the decision logic
-             print(f"Debug: No tools needed after verify. Decision: {decision}")
-             return decision # Return "correct" or "complete"
+             # 不需要工具，直接决定是修正还是完成
+             decision = self._should_continue_logic(state) # 调用决策逻辑
+             # print(f"Debug: No tools needed after verify. Decision: {decision}")
+             return decision # 返回"correct"或"complete"
 
-    def _check_correct_output(self, state: CriticState):
-        """Checks correct output: call tools or continue to verify"""
-        # First, check if the last message from 'correct' node requests tool usage
-        if tools_condition(state) == "tools":
-             # Update step marker *before* going to tools
-             state["step"] = "correct" # Mark that 'correct' triggered the tool call
-             print("Debug: Correct output requires tools.")
-             return "tools"
-        else:
-             print("Debug: No tools needed after correct. Proceeding to verify.")
-             return "continue" # No tools needed, go back to verify
+
 
     def _should_continue_logic(self, state: CriticState) -> str:
-        """Internal logic to decide whether to continue iteration. Returns 'correct' or 'complete'."""
+        """决定是否继续迭代"""
         critiques = state["critiques"]
         iterations = state["iterations"]
-
+        
+        # 达到最大迭代次数
         if iterations >= self.max_iterations:
-            print(f"Debug: Max iterations ({self.max_iterations}) reached.")
+            state["is_complete"] = True
             return "complete"
-
+        
+        # 批评为空或明确表示正确
         if isinstance(critiques, str):
-             critique_text = critiques
-             # Remove marker for analysis if necessary (assuming it's already raw in state)
-             # if self.use_markers and critique_text.startswith(self.step_markers['critique']):
-             #      critique_text = critique_text[len(self.step_markers['critique']):].strip()
-
-             positive_indicators = ["未发现错误", "答案是正确的", "验证通过", "没有发现问题", "答案准确无误"]
-             if not critique_text or critique_text.strip() == "" or any(indicator in critique_text for indicator in positive_indicators):
-                  print(f"Debug: Stopping criteria met. Critique: '{critique_text[:100]}...'")
-                  return "complete"
-             else:
-                  print(f"Debug: Correction needed based on critique: '{critique_text[:100]}...'")
-                  return "correct"
+            critique_text = critiques.strip()
+            positive_indicators = ["未发现错误", "答案是正确的", "验证通过", "没有问题"]
+            
+            if not critique_text or any(indicator in critique_text for indicator in positive_indicators):
+                state["is_complete"] = True
+                return "complete"
+            else:
+                return "correct"
         else:
-             # Assume multimodal critiques always need correction (or add specific logic)
-             print("Debug: Multimodal critique received, proceeding to correction.")
-             return "correct"
+            # 多模态批评
+            return "correct"  # 默认需要修正
 
     # --- Standard Agent Methods ---
     def _get_messages(self, input_data: Union[str, Dict[str, Any], List[Dict[str, Any]]]) -> List[BaseMessage]:

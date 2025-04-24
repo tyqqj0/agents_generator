@@ -28,7 +28,7 @@ dotenv.load_dotenv()
 api_name = "OPENAI_API_KEY"
 api_key = os.environ.get(api_name)
 base_url = os.environ.get("BASE_URL")
-model = "gpt-4o"
+model = "gpt-4o-mini"
 
 
 
@@ -53,9 +53,10 @@ async def compare_agents(prompt, image_url=None):
     
     # print("===== ToolAgent 结果 =====")
     # tool_agent = ToolAgent(name="tool_agent", model=llm, mcp_servers=get_mcp_config(["tavily", "code"]))
-    
+     
     # async with tool_agent:
     #     # print(tool_agent.tools)
+    #     tool_agent.visualize()
     #     result = await tool_agent.agenerate(prompt, image_url=image_url)
     #     print(result["messages"][-1].content)
     
@@ -66,24 +67,31 @@ async def compare_agents(prompt, image_url=None):
     #     print(result["messages"][-1].content)
         
     print("\n===== CriticAgent 结果 =====")
-    critic_agent = CriticAgent(name="critic_agent", model=llm, mcp_servers=get_mcp_config(["tavily"]), use_markers=True)
+    critic_agent = CriticAgent(name="critic_agent", model=llm, mcp_servers=get_mcp_config(["tavily"]), use_markers=False)
     async with critic_agent:
+        # critic_agent.visualize()
         result = await critic_agent.agenerate(prompt, image_url=image_url)
-        # 处理消息列表中可能包含的非字符串内容
-        messages_content = []
-        for message in result["messages"]:
-            if isinstance(message.content, str):
-                messages_content.append(message.content)
-            elif isinstance(message.content, list):
-                # 如果内容是列表，尝试提取其中的文本部分
-                for item in message.content:
-                    if isinstance(item, dict) and "text" in item:
-                        messages_content.append(item["text"])
-                    elif isinstance(item, str):
-                        messages_content.append(item)
         
-        result_text = "\n".join(messages_content)
-        print(result_text)
+        # 获取消息历史(这里的messages已经是清理过的，只包含用户输入和AI回答)
+        messages = result.get("messages", [])
+        
+        # 直接打印整个交互历史
+        print("用户提问和AI回答历史:")
+        for msg in messages:
+            print(f"{msg.type.upper()}: {msg.content}")
+        
+        # 如果你只想打印最终结果，可以使用:
+        # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
+        # if last_ai:
+        #     print(f"最终回答: {last_ai.content}")
+        
+        # 打印迭代信息
+        print(f"\n完成状态: {result.get('is_complete', False)}")
+        print(f"迭代次数: {result.get('iterations', 0)}")
+        
+        # 打印其他可能有用的状态信息
+        if 'critiques' in result and result['critiques']:
+            print(f"最后批评: {result['critiques'][:100]}...")
 
 if __name__ == "__main__":
     # asyncio.run(tool_agent_example())
