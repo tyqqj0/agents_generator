@@ -1,0 +1,5 @@
+   include agent_generator/README.md
+   include agent_generator/requirements.txt
+   include agent_generator/mcp_servers/README.md
+   recursive-include agent_generator/agents/templates *
+   recursive-include agent_generator/mcp_servers/servers *

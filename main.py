@@ -81,14 +81,15 @@ async def compare_agents(prompt, image_url=None):
         #     print(f"{msg.type.upper()}: {msg.content}")
         
         # 打印所有消息的type
-        print("所有消息的type:")
-        for msg in messages:
-            print(msg.type)
+        # print("所有消息的type:")
+        # for msg in messages:
+        #     print(msg.type)
             
-        print("所有消息的content:")
-        for msg in messages:
-            print(msg.content)
+        # print("所有消息的content:")
+        # for msg in messages:
+        #     print(msg.content)
         
+        print(result.get("current_answer", []))
         # # # 如果你只想打印最终结果，可以使用:
         # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
         # if last_ai:

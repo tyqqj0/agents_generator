@@ -1,115 +1,205 @@
-# Simple Agent Framework
+# Agent Generator（代理生成器）
 
-这是一个轻量级、灵活的框架，用于构建和使用具有统一接口的各种AI代理。该框架使得创建能够通过模型上下文协议（MCP）使用工具的代理变得简单。
+这是一个灵活而强大的框架，用于构建和管理各种类型的AI代理。该框架使开发者能够轻松创建能够通过模型上下文协议（MCP）使用工具的智能代理。
 
 ## 项目目标
 
-- **提供统一接口**：使用相同的简单接口调用不同类型的代理。
-- **简化代理创建**：轻松构建不同类型的专业代理。
-- **集成MCP**：通过官方的langchain_mcp_adapters无缝使用MCP服务器工具。
-- **灵活设计**：提供一个简单但可扩展的架构。
+- **统一接口**：提供一致的简单接口来调用不同类型的AI代理
+- **快速创建代理**：简化专业代理的构建过程
+- **MCP无缝集成**：通过langchain_mcp_adapters库轻松使用MCP服务器工具
+- **灵活架构**：提供可扩展的设计，支持多种代理类型和工具
 
 ## 项目结构
 
 ```
-.                       # 项目根目录
-├── .env                # 环境变量 (需要用户自行创建)
-├── .venv/              # Python虚拟环境 (建议)
-├── examples/           # 使用框架的示例代码
-│   ├── chat_agent_example.py
-│   ├── custom_tools_agent_example.py
-│   ├── router_agent_example.py
-│   └── tool_agent_example.py
-├── mcp_servers/        # 自定义MCP服务器实现
-│   ├── calculator_mcp.py
-│   ├── weather_mcp.py
-│   ├── requirements.txt
-│   └── README.md
-├── simple_agent_framework/ # 框架核心代码
-│   ├── agents/           # 代理实现
-│   │   ├── __init__.py
-│   │   ├── base.py         # 代理基类
-│   │   ├── chat_agent.py   # 聊天代理
-│   │   ├── router_agent.py # 路由代理
-│   │   └── tool_agent.py   # 工具代理
-│   ├── connectors/       # 连接器实现
-│   │   ├── __init__.py
-│   │   └── mcp.py        # MCP连接器
-│   ├── templates/        # 提示模板
-│   │   ├── __init__.py
-│   │   └── prompts.py
-│   ├── utils/            # 工具函数
-│   │   ├── __init__.py
-│   │   └── helpers.py
-│   └── __init__.py       # 包初始化
-├── .gitignore          # Git忽略文件
-├── main.py             # 主测试和演示脚本
-├── pyproject.toml      # 项目元数据和构建配置
-├── README.md           # 本文档
-└── setup.py            # 安装脚本
+agent_generator/
+├── __init__.py              # 包初始化和主要导出
+├── agents/                  # 代理实现
+│   ├── __init__.py          # 代理包初始化
+│   ├── base.py              # 基础代理类（BaseAgent）
+│   ├── tool_agent.py        # 工具代理实现
+│   ├── null_agent.py        # 空代理实现
+│   ├── critic_agent.py      # 评论家代理实现
+│   ├── react_agent.py       # ReAct代理实现
+│   └── templates/           # 代理提示模板
+├── mcp_servers/             # MCP服务器实现
+│   ├── __init__.py          # MCP包初始化
+│   ├── README.md            # MCP服务器使用说明
+│   ├── servers/             # 各种MCP服务器实现
+│   ├── utils/               # MCP工具函数
+│   ├── test_calculator_client.py # 计算器服务客户端测试
+│   ├── test_code_client.py  # 代码服务客户端测试
+│   └── test_tavily.py       # Tavily搜索服务测试
+└── requirements.txt         # 项目依赖
 ```
 
-## 各组件功能
+## 主要组件
 
-- **simple_agent_framework/**: 框架的核心包。
-    - `agents/`: 包含不同类型的代理实现。
-        - `base.py`: 定义了所有代理共享的基础接口 (`Agent`) 和响应格式 (`AgentResponse`)。
-        - `chat_agent.py`: 简单的聊天代理，与LLM进行对话。
-        - `tool_agent.py`: 可以通过MCP连接器使用外部工具的代理。
-        - `router_agent.py`: 根据用户查询将请求路由到最合适的专业代理。
-    - `connectors/`: 用于连接外部服务或协议。
-        - `mcp.py`: `MCPConnector`类，负责与MCP服务器通信，列出工具和执行工具。
-    - `templates/`: 包含预定义的提示模板。
-        - `prompts.py`: 为不同类型的代理提供默认的系统提示。
-    - `utils/`: 辅助函数。
-        - `helpers.py`: 例如，加载不同提供商的LLM。
-- **examples/**: 包含如何使用框架中各种代理的示例脚本。
-- **mcp_servers/**: 包含自定义的MCP服务器实现（计算器和天气）。
-    - 这些服务器是独立的Python脚本，可以单独运行。
-    - `README.md`: 提供了关于如何运行和扩展这些服务器的详细说明。
-- **main.py**: 一个集成的测试脚本，演示了如何创建和使用各种代理（包括使用自定义MCP服务器的代理），并提供了一个交互式菜单来选择测试模式。
-- **setup.py / pyproject.toml**: 用于包的安装和依赖管理。
+### 1. 代理模块 (agents/)
 
+该模块包含不同类型的代理实现，所有代理都继承自`BaseAgent`基类：
 
+- **BaseAgent**：所有代理的基类，定义了统一接口和核心功能
+- **ToolAgent**：能够使用工具的代理，支持MCP工具的集成
+- **ReactAgent**：实现ReAct（推理+行动）范式的代理
+- **CriticAgent**：提供评估和批判性思考的代理
+- **NullAgent**：简单的空代理实现，用于测试和基础场景
+
+所有代理都支持多模态输入（文本和图像），并提供异步API。
+
+### 2. MCP服务器模块 (mcp_servers/)
+
+提供了多种MCP服务器的实现，可以轻松集成到代理中：
+
+- **天气服务器**：提供城市天气查询功能
+- **计算器服务器**：提供数学计算功能
+- **Tavily搜索服务器**：提供网络搜索和内容提取功能
+
+每个服务器都是独立的Python应用程序，可以单独启动和使用。
 
 ## 基本用法
 
-框架的核心是 `Agent` 类及其子类。所有代理都提供一致的接口：
+### 创建和使用工具代理
 
-- `agent.generate(query)`: 同步生成响应内容（字符串）。
-- `agent.agenerate(query)`: 异步生成 `AgentResponse` 对象。
-- `agent(query)`: 便捷方法，等同于 `agent.generate(query).content`。
+```python
+from agent_generator import ToolAgent
+from langchain_openai import ChatOpenAI
+import asyncio
+import os
 
+# 加载模型
+model = ChatOpenAI(
+    model_name="gpt-4",
+    temperature=0.7,
+    api_key=os.environ.get("OPENAI_API_KEY")
+)
 
+# 创建MCP服务器配置
+mcp_servers = {
+    "calculator": {
+        "command": "python",
+        "args": ["agent_generator/mcp_servers/servers/calculator_mcp.py"],
+        "transport": "stdio"
+    }
+}
 
-## 扩展框架
+# 初始化代理
+agent = ToolAgent(
+    name="计算助手",
+    model=model,
+    mcp_servers=mcp_servers
+)
+
+# 异步使用代理
+async def main():
+    async with agent:  # 使用上下文管理器自动启动和关闭MCP服务器
+        response = await agent.agenerate("计算23.5乘以18.7是多少?")
+        print(response)
+
+# 运行异步函数
+asyncio.run(main())
+```
+
+### 多代理工作流
+
+可以组合使用多个代理来创建复杂的工作流：
+
+```python
+from agent_generator import ToolAgent, CriticAgent
+from langchain_openai import ChatOpenAI
+import asyncio
+import os
+
+# 加载模型
+model = ChatOpenAI(model_name="gpt-4", temperature=0.7)
+
+# 初始化工具代理
+tool_agent = ToolAgent(
+    name="搜索助手",
+    model=model,
+    mcp_servers={"tavily": {...}}  # Tavily搜索服务器配置
+)
+
+# 初始化评论家代理
+critic_agent = CriticAgent(
+    name="评论家",
+    model=model
+)
+
+# 异步工作流
+async def workflow(query):
+    async with tool_agent, critic_agent:
+        # 使用工具代理获取信息
+        search_results = await tool_agent.agenerate(f"搜索关于: {query}")
+        
+        # 使用评论家代理评估结果
+        evaluation = await critic_agent.agenerate(f"评估以下信息的准确性和完整性: {search_results}")
+        
+        return evaluation
+
+# 运行工作流
+asyncio.run(workflow("量子计算的最新进展"))
+```
+
+## 支持的MCP服务器
+
+框架集成了多种MCP服务器，包括：
+
+### 1. 计算器服务器
+
+提供数学计算功能，包括基本运算、幂运算和平方根计算。
+
+### 2. Tavily搜索服务器
+
+提供互联网搜索功能，需要Tavily API密钥。功能包括：
+- 一般网络搜索（tavily_search）
+- 新闻搜索（tavily_news_search）
+- 网页内容提取（tavily_extract）
+
+### 3. 其他自定义服务器
+
+可以轻松扩展自己的MCP服务器，参考`mcp_servers/README.md`获取详细说明。
+
+## 依赖项
+
+主要依赖包括：
+- langchain-openai
+- langchain-anthropic
+- langchain
+- langgraph
+- python-dotenv
+- anthropic
+- openai
+- mcp
+- fastapi
+- uvicorn
+
+## 如何扩展
 
 ### 创建自定义代理
 
-继承 `Agent` 基类并实现 `agenerate` 方法：
+继承`BaseAgent`类并实现必要的方法：
 
 ```python
-from simple_agent_framework import Agent, AgentResponse
-from typing import List, Optional
-from langchain_core.messages import BaseMessage
+from agent_generator import BaseAgent
+from langgraph.graph.graph import CompiledGraph
 
-class MyCustomAgent(Agent):
-    async def agenerate(self, 
-                      query: str, 
-                      messages: Optional[List[BaseMessage]] = None,
-                      **kwargs) -> AgentResponse:
-        # 在这里实现你的自定义逻辑
-        processed_content = f"Custom agent received: {query}"
-        return AgentResponse(
-            content=processed_content,
-            metadata={"agent_name": self.name, "processed": True}
-        )
+class MyCustomAgent(BaseAgent):
+    def __init__(self, name, model, **kwargs):
+        super().__init__(name, model, **kwargs)
+        # 自定义初始化代码
+    
+    def _create_agent(self) -> CompiledGraph:
+        # 实现代理创建逻辑
+        # 返回编译后的图
+        ...
 ```
 
-### 创建自定义MCP服务器
+### 集成自定义MCP服务器
 
-参考 `mcp_servers/README.md` 中的说明和示例代码 (`calculator_mcp.py`, `weather_mcp.py`) 来创建你自己的Python MCP服务器。
-
+1. 创建新的MCP服务器Python文件
+2. 使用FastMCP库实现所需功能
+3. 通过`mcp_servers`参数将其配置到代理中
 
 ## 许可证
 

@@ -99,7 +99,7 @@ def load_server_config(server_name: str) -> Dict[str, Any]:
     return module.SERVER_CONFIG
 
 
-def get_mcp_config(
+def get_mcp_server_config(
     server_names: Optional[List[str]] = None,
     pretty: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
@@ -144,7 +144,7 @@ def generate_mcp_config_file(
         server_names: 要包含的服务器名称列表，如果为None，则包含所有服务器
         pretty: 是否美化输出
     """
-    configs = get_mcp_config(server_names)
+    configs = get_mcp_server_config(server_names)
 
     # 创建最终配置
     mcp_config = {"mcpServers": {}}
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     generate_mcp_config_file()
 
     # 测试运行
-    server_config = get_mcp_config(server_names=["calculator"])
+    server_config = get_mcp_server_config(server_names=["calculator"])
     print(server_config)
 
 
@@ -219,7 +219,7 @@ def test_calculator_mcp():
         print("✓ 配置细节验证成功")
 
         # 测试获取MCP配置
-        mcp_config = get_mcp_config(server_names=["calculator"])
+        mcp_config = get_mcp_server_config(server_names=["calculator"])
         assert "calculator" in mcp_config, "在MCP配置中未找到计算器服务器"
         print("✓ 成功获取MCP配置")
 

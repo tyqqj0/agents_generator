@@ -20,6 +20,7 @@ Agent模块包
 """
 
 from .base import BaseAgent
+from .null_agent import NullAgent
 from .tool_agent import ToolAgent
 from .react_agent import ReactAgent
 from .critic_agent import CriticAgent
@@ -55,6 +56,7 @@ try:
         "ToolAgent",
         "ReactAgent",
         "CriticAgent",
+        "NullAgent"
         "MultiServerMCPClient",
         "load_mcp_tools",
         "create_mcp_client",
@@ -74,6 +76,14 @@ except ImportError:
         "DEFAULT_CRITIC_SYSTEM_PROMPT",
         "DEFAULT_CRITIQUE_PROMPT",
         "DEFAULT_CORRECTION_PROMPT",
+    ]
+    
+    
+def get_available_agents():
+    return [
+        "ToolAgent",
+        "ReactAgent",
+        "CriticAgent",
     ]
 
 # 包版本信息

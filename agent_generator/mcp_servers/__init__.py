@@ -22,7 +22,7 @@ import os
 import sys
 from .utils.config_manager import (
     discover_mcp_servers,
-    get_mcp_config,
+    get_mcp_server_config,
     generate_mcp_config_file,
 )
 
@@ -34,7 +34,7 @@ __version__ = "0.1.0"
 # 导出公共API
 __all__ = [
     "discover_mcp_servers", 
-    "get_mcp_config", 
+    "get_mcp_server_config", 
     "generate_mcp_config_file",
     "get_available_servers",
 ]
