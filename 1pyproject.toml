@@ -1,0 +1,38 @@
+    [build-system]
+    requires = ["setuptools>=42", "wheel"]
+    build-backend = "setuptools.build_meta"
+
+    [project]
+    name = "agent_generator"
+    version = "0.1.0"
+    description = "A flexible framework for building AI agents that can seamlessly integrate with MCP servers for enhanced capabilities"
+    readme = "README.md"
+    authors = [{name = "tyqqj", email = "tyqqj0@gmail.com"}]
+    license = {text = "MIT"}
+    classifiers = [
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ]
+    requires-python = ">=3.8"
+    dependencies = [
+        "langchain-openai",
+        "langchain-anthropic",
+        "langchain",
+        "langgraph",
+        "python-dotenv",
+        "anthropic",
+        "openai",
+        "mcp",
+        "fastapi",
+        "uvicorn",
+    ]
+
+    [tool.setuptools]
+    package-dir = {"" = "src"}
+
+    [tool.setuptools.packages.find]
+    where = ["src"]
+
+    [project.urls]
+    Homepage = "https://github.com/tyqqj0/agent_generator"

@@ -10,10 +10,11 @@
 
 
 
+import sys
+sys.path.append("./src")  # 添加源码路径
 
-
-from agent_generator.agents import ToolAgent, ReactAgent, CriticAgent
-from agent_generator.mcp_servers import get_available_servers, get_mcp_config
+from agent_generator.agents import ToolAgent, ReactAgent, CriticAgent, AutoActAgent
+from agent_generator.mcp_servers import get_available_servers, get_mcp_server_config
 
 import asyncio
 import dotenv
@@ -35,14 +36,14 @@ model = "gpt-4o"
 
 async def tool_agent_example():
     llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url)
-    agent = ToolAgent(name="mcp_agent", model=llm, mcp_servers=get_mcp_config(get_available_servers()))
+    agent = ToolAgent(name="mcp_agent", model=llm, mcp_servers=get_mcp_server_config(get_available_servers()))
     async with agent:
         result = await agent.agenerate("你好，请给出北京今天天气")
         print(result["messages"][-1].content)
         
 async def react_agent_example():
     llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url)
-    agent = ReactAgent(name="mcp_agent", model=llm, mcp_servers=get_mcp_config(get_available_servers()))
+    agent = ReactAgent(name="mcp_agent", model=llm, mcp_servers=get_mcp_server_config(get_available_servers()))
     print(json.dumps(agent.tools, indent=4))
     async with agent:
         result = await agent.agenerate("你好，请给出北京今天天气，并且计算1+626287+北京今天的天气温度")
@@ -52,7 +53,7 @@ async def compare_agents(prompt, image_url=None):
     llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url)
     
     # print("===== ToolAgent 结果 =====")
-    # tool_agent = ToolAgent(name="tool_agent", model=llm, mcp_servers=get_mcp_config(["tavily", "code"]))
+    # tool_agent = ToolAgent(name="tool_agent", model=llm, mcp_servers=get_mcp_server_config(["tavily", "code"]))
      
     # async with tool_agent:
     #     # print(tool_agent.tools)
@@ -61,35 +62,35 @@ async def compare_agents(prompt, image_url=None):
     #     print(result["messages"][-1].content)
     
     # print("\n===== ReactAgent 结果 =====")
-    # react_agent = ReactAgent(name="react_agent", model=llm, mcp_servers=get_mcp_config(["tavily"]))
+    # react_agent = ReactAgent(name="react_agent", model=llm, mcp_servers=get_mcp_server_config(["tavily"]))
     # async with react_agent:
     #     result = await react_agent.agenerate(prompt, image_url=image_url)
     #     print(result["messages"][-1].content)
         
-    print("\n===== CriticAgent 结果 =====")
-    critic_agent = CriticAgent(name="critic_agent", model=llm, mcp_servers=get_mcp_config(["tavily"]), use_markers=False)
-    async with critic_agent:
-        # critic_agent.visualize()
-        result = await critic_agent.agenerate(prompt, image_url=image_url)
+    # print("\n===== CriticAgent 结果 =====")
+    # critic_agent = CriticAgent(name="critic_agent", model=llm, mcp_servers=get_mcp_server_config(["tavily"]), use_markers=False)
+    # async with critic_agent:
+    #     # critic_agent.visualize()
+    #     result = await critic_agent.agenerate(prompt, image_url=image_url)
         
-        # 获取消息历史(这里的messages已经是清理过的，只包含用户输入和AI回答)
-        messages = result.get("current_answer", [])
+    #     # 获取消息历史(这里的messages已经是清理过的，只包含用户输入和AI回答)
+    #     messages = result.get("current_answer", [])
         
-        # 直接打印整个交互历史
-        # print("用户提问和AI回答历史:")
-        # for msg in messages:
-        #     print(f"{msg.type.upper()}: {msg.content}")
+    #     # 直接打印整个交互历史
+    #     # print("用户提问和AI回答历史:")
+    #     # for msg in messages:
+    #     #     print(f"{msg.type.upper()}: {msg.content}")
         
-        # 打印所有消息的type
-        # print("所有消息的type:")
-        # for msg in messages:
-        #     print(msg.type)
+    #     # 打印所有消息的type
+    #     # print("所有消息的type:")
+    #     # for msg in messages:
+    #     #     print(msg.type)
             
-        # print("所有消息的content:")
-        # for msg in messages:
-        #     print(msg.content)
+    #     # print("所有消息的content:")
+    #     # for msg in messages:
+    #     #     print(msg.content)
         
-        print(result.get("current_answer", []))
+    #     print(result.get("current_answer", []))
         # # # 如果你只想打印最终结果，可以使用:
         # last_ai = next((msg for msg in reversed(messages) if msg.type == "ai"), None)
         # if last_ai:
@@ -102,6 +103,20 @@ async def compare_agents(prompt, image_url=None):
         # 打印其他可能有用的状态信息
         # if 'critiques' in result and result['critiques']:
         #     print(f"最后批评: {result['critiques'][:100]}...")
+
+    # 使用AutoActAgent
+    print("===== AutoActAgent 结果 =====")
+    autoact_agent = AutoActAgent(
+        name="autoact_agent",
+        model=llm,
+        mcp_servers=get_mcp_server_config(get_available_servers()),
+        temperature=0.7,
+        max_generated_samples=10,
+    )
+    async with autoact_agent:
+        result = await autoact_agent.agenerate(prompt, image_url=image_url)
+        print(result["messages"][-1].content)
+    
 
 if __name__ == "__main__":
     # asyncio.run(tool_agent_example())

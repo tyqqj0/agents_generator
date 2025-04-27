@@ -25,6 +25,7 @@ from .agents import (
     ReactAgent,
     CriticAgent,
     NullAgent,
+    AutoActAgent,
     get_available_agents
 )
 

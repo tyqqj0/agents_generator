@@ -22,7 +22,7 @@ logging.getLogger("langchain").setLevel(logging.WARNING)
 
 # 使用绝对导入
 from agent_generator.agents import ToolAgent
-from agent_generator.mcp_servers import get_available_servers, get_mcp_config
+from agent_generator.mcp_servers import get_available_servers, get_mcp_server_config
 
 # 加载环境变量
 load_dotenv()
@@ -38,7 +38,7 @@ async def test_mcp_connection():
     # 获取MCP服务器列表和配置
     names = get_available_servers()
     print(f"可用的MCP服务器: {names}")
-    mcp_servers = get_mcp_config(names)
+    mcp_servers = get_mcp_server_config(names)
 
     # 导入所需的类
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -92,7 +92,7 @@ async def test_mcp_connection_with_agent():
     # 获取MCP服务器列表和配置
     names = get_available_servers()
     # print(f"可用的MCP服务器: {names}")
-    mcp_servers = get_mcp_config(names)
+    mcp_servers = get_mcp_server_config(names)
     mcp_servers = None
     
     model = ChatOpenAI(

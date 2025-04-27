@@ -171,3 +171,5 @@ cython_debug/
 uv.lock
 
 .env
+
+.png

@@ -24,6 +24,7 @@ from .null_agent import NullAgent
 from .tool_agent import ToolAgent
 from .react_agent import ReactAgent
 from .critic_agent import CriticAgent
+from .autoact_agent import AutoActAgent
 # 注释掉不存在的导入
 # from .agents.chat_agent import ChatAgent
 # from .agents.router_agent import RouterAgent
@@ -56,7 +57,8 @@ try:
         "ToolAgent",
         "ReactAgent",
         "CriticAgent",
-        "NullAgent"
+        "NullAgent",
+        "AutoActAgent",
         "MultiServerMCPClient",
         "load_mcp_tools",
         "create_mcp_client",
@@ -72,6 +74,8 @@ except ImportError:
         "ToolAgent",
         "ReactAgent",
         "CriticAgent",
+        "NullAgent",
+        "AutoActAgent",
         "DEFAULT_TOOL_PROMPT",
         "DEFAULT_CRITIC_SYSTEM_PROMPT",
         "DEFAULT_CRITIQUE_PROMPT",
@@ -84,6 +88,7 @@ def get_available_agents():
         "ToolAgent",
         "ReactAgent",
         "CriticAgent",
+        "AutoActAgent",
     ]
 
 # 包版本信息
