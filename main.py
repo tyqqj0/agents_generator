@@ -114,6 +114,7 @@ async def compare_agents(prompt, image_url=None):
         max_generated_samples=10,
     )
     async with autoact_agent:
+        # autoact_agent.visualize()
         result = await autoact_agent.agenerate(prompt, image_url=image_url)
         print(result["messages"][-1].content)
     

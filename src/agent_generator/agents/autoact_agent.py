@@ -26,6 +26,76 @@ from typing_extensions import TypedDict
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def extract_plan_from_content(plan_content: str) -> List[Dict[str, Any]]:
+    """
+    从计划内容中提取结构化的步骤列表
+    
+    Args:
+        plan_content: 模型生成的计划文本
+        
+    Returns:
+        List[Dict[str, Any]]: 结构化的计划步骤列表
+    """
+    # 尝试从计划内容中提取JSON格式的步骤
+    json_pattern = r'\[.*\]'
+    json_match = re.search(json_pattern, plan_content, re.DOTALL)
+    if json_match:
+        try:
+            steps = json.loads(json_match.group(0))
+            if isinstance(steps, list):
+                # 确保每个步骤都有必要的字段
+                for i, step in enumerate(steps):
+                    if not isinstance(step, dict):
+                        steps[i] = {"description": str(step), "tool": ""}
+                    elif "description" not in step:
+                        steps[i]["description"] = f"步骤 {i+1}"
+                    if "tool" not in step:
+                        steps[i]["tool"] = ""
+                return steps
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    # 尝试从格式化文本中提取步骤
+    steps = []
+    step_pattern = r'(?:步骤|Step)\s*(\d+)[:.：]?\s*(.*?)(?=(?:步骤|Step)\s*\d+[:.：]?|$)'
+    step_matches = re.finditer(step_pattern, plan_content, re.DOTALL | re.IGNORECASE)
+    
+    for match in step_matches:
+        step_num = match.group(1)
+        description = match.group(2).strip()
+        
+        # 尝试提取工具名称
+        tool_match = re.search(r'(?:使用|Use)\s+([A-Za-z0-9_]+)(?:\s+工具)?', description, re.IGNORECASE)
+        tool_name = tool_match.group(1) if tool_match else ""
+        
+        steps.append({
+            "description": description,
+            "tool": tool_name
+        })
+    
+    # 如果上述方法都未提取出步骤，则尝试按行分割
+    if not steps:
+        lines = [line.strip() for line in plan_content.split('\n') if line.strip()]
+        for i, line in enumerate(lines):
+            # 跳过可能的计划标题
+            if i == 0 and ("计划" in line or "Plan" in line):
+                continue
+                
+            # 尝试提取工具名称
+            tool_match = re.search(r'(?:使用|Use)\s+([A-Za-z0-9_]+)(?:\s+工具)?', line, re.IGNORECASE)
+            tool_name = tool_match.group(1) if tool_match else ""
+            
+            steps.append({
+                "description": line,
+                "tool": tool_name
+            })
+    
+    # 如果仍然没有提取出步骤，则将整个内容作为一个步骤
+    if not steps:
+        steps = [{"description": plan_content.strip(), "tool": ""}]
+    
+    return steps
+
 class SubAgentType:
     """定义子代理类型"""
     PLAN = "plan"
@@ -96,12 +166,33 @@ class AutoActAgent(BaseAgent):
             "你是工具代理(Tool-Agent)，负责精确调用工具。"
             "根据提供的计划步骤和工具说明，构造正确的工具调用参数。"
             "你需要准确解析工具需要的参数格式，确保调用成功。"
+            "当你认为所有必要的工具调用已完成，或者已获得足够的信息来回答原始问题时，"
+            "请明确指出现在应该生成最终答案，例如写：'任务已完成，现在可以生成最终答案'。"
         )
         
         self.reflect_system_prompt = (
             "你是反思代理(Reflect-Agent)，负责分析信息并得出结论。"
             "审查所有收集到的信息，评估有效性和相关性，并提供一个全面准确的最终答案。"
             "你的回答应该直接解决原始问题，并提供清晰的解释。"
+            "生成最终答案后，请确保明确标记任务已完成。"
+        )
+        
+        self.execution_system_prompt = (
+            "你是执行代理(Execute-Agent)，负责执行单个计划步骤。"
+            "根据当前计划步骤的要求，执行相应操作并返回结果。"
+            "你需要准确理解步骤需求，并提供清晰的执行结果。"
+        )
+        
+        self.reflection_system_prompt = (
+            "你是分析代理(Analysis-Agent)，负责审视执行过程并提供反馈。"
+            "分析已完成步骤的结果，评估执行质量，并决定下一步行动。"
+            "你需要基于已收集的信息，提供对整体任务进展的反思和建议。"
+        )
+        
+        self.final_system_prompt = (
+            "你是总结代理(Summary-Agent)，负责整合所有信息并提供最终回答。"
+            "全面审视整个执行过程、所有收集的信息，并提供一个完整、权威的最终回答。"
+            "你的回答应直接解决用户的原始问题，清晰、简洁、准确。"
         )
 
     def _create_agent(self) -> CompiledGraph:
@@ -114,7 +205,7 @@ class AutoActAgent(BaseAgent):
         # 创建状态图
         workflow = StateGraph(AutoActState)
         
-        # 添加三个核心节点: 规划、工具使用、反思
+        # 添加核心节点: 规划、工具使用、反思
         workflow.add_node("plan_node", self._plan_node)
         workflow.add_node("tool_node", self._tool_node)
         workflow.add_node("reflect_node", self._reflect_node)
@@ -197,7 +288,7 @@ class AutoActAgent(BaseAgent):
             }
         
         # 如果已有最终答案，标记为完成
-        elif state.get("final_answer"):
+        elif state.get("final_answer") or state.get("is_complete"):
             logger.info("已有最终答案，标记为完成")
             return {
                 **state,
@@ -212,95 +303,65 @@ class AutoActAgent(BaseAgent):
         }
     
     async def _plan_node(self, state: AutoActState):
-        """规划节点，负责分解任务和制定计划"""
+        """规划节点，生成行动计划"""
         messages = state.get("messages", [])
         
-        # 获取工具描述
-        tools_desc = self._format_tools_description()
-        
-        # 构造规划提示
         system_message = SystemMessage(content=self.plan_system_prompt)
         
-        # 获取用户问题
-        user_query = ""
+        # 检查是否有多模态消息（包含图像）
+        has_image = False
+        original_multimodal_message = None
+        
         for msg in messages:
             if msg.type == "human":
-                user_query = msg.content
+                if isinstance(msg.content, list):
+                    # 检测多模态消息中的图像
+                    has_image = any(item.get("type") == "image_url" for item in msg.content if isinstance(item, dict))
+                    if has_image:
+                        original_multimodal_message = msg
                 break
         
-        # 构造规划提示
-        planning_prompt = f"""
-        请为解决以下问题制定详细的执行计划：
-
-        问题: {user_query}
-
-        可用工具:
-        {tools_desc}
-
-        请将问题分解为具体步骤，每个步骤应包括:
-        1. 步骤描述: 这一步要做什么
-        2. 使用工具: 应该使用哪个工具
-        3. 工具参数: 需要提供哪些参数
-        
-        输出格式应为JSON数组，每个步骤是一个对象，例如:
-        [
-            {{"description": "步骤1描述", "tool": "工具名称", "parameters": {{"参数1": "值1", "参数2": "值2"}}}},
-            {{"description": "步骤2描述", "tool": "工具名称", "parameters": {{"参数1": "值1"}}}}
-        ]
-        """
-        
-        # 创建规划消息
-        planning_messages = [system_message, HumanMessage(content=planning_prompt)]
+        # 构建规划消息列表
+        if has_image and original_multimodal_message:
+            # 如果有图像，使用原始多模态消息
+            planning_messages = [system_message, original_multimodal_message]
+        else:
+            # 否则使用普通消息
+            planning_messages = [system_message] + messages
         
         # 调用模型生成计划
-        plan_response = await self.model.ainvoke(planning_messages)
-        plan_content = plan_response.content
+        planning_response = await self.model.ainvoke(planning_messages)
+        plan = planning_response.content
         
-        # 提取JSON计划
-        try:
-            # 尝试从响应中提取JSON
-            json_match = re.search(r'\[.*\]', plan_content, re.DOTALL)
-            if json_match:
-                plan_json = json.loads(json_match.group(0))
-            else:
-                # 如果没有找到JSON，尝试解析整个响应
-                plan_json = json.loads(plan_content)
-                
-            # 确保计划是列表形式
-            if not isinstance(plan_json, list):
-                raise ValueError("计划必须是列表形式")
-                
-            # 更新状态
-            logger.info(f"生成计划: {plan_json}")
-            scratchpad = state.get("scratchpad", "")
-            scratchpad += f"\n规划结果:\n{json.dumps(plan_json, ensure_ascii=False, indent=2)}"
-            
-            return {
-                **state,
-                "plan": plan_json,
-                "messages": state["messages"] + [AIMessage(content=plan_content)],
-                "scratchpad": scratchpad
-            }
-            
-        except Exception as e:
-            logger.error(f"解析计划失败: {e}")
-            # 创建一个简单的默认计划
-            default_plan = [{"description": "直接回答问题", "tool": "final_answer", "parameters": {}}]
-            scratchpad = state.get("scratchpad", "")
-            scratchpad += f"\n解析计划失败，使用默认计划: {default_plan}"
-            
-            return {
-                **state,
-                "plan": default_plan,
-                "messages": state["messages"] + [AIMessage(content=f"计划生成失败: {e}，使用默认计划")],
-                "scratchpad": scratchpad
-            }
+        # 更新状态
+        logger.info(f"生成计划: {plan}")
+        
+        # 提取计划步骤并添加到状态
+        plan_steps = extract_plan_from_content(plan)
+        if not plan_steps:
+            logger.warning("无法从计划中提取步骤，使用整个计划作为一个步骤")
+            plan_steps = [{"description": plan, "tool": ""}]
+        
+        # 初始化记录区
+        scratchpad = f"计划:\n{plan}\n\n执行步骤:\n"
+        
+        return {
+            **state,
+            "plan": plan,
+            "plan_steps": plan_steps,
+            "current_step_index": 0,
+            "scratchpad": scratchpad,
+            "has_image": has_image
+        }
     
     async def _tool_node(self, state: AutoActState):
         """工具节点，负责调用工具执行计划步骤"""
         messages = state.get("messages", [])
         plan = state.get("plan", [])
         current_step = state.get("current_step", 0)
+        plan_steps = state.get("plan_steps", [])
+        scratchpad = state.get("scratchpad", "")
+        has_image = state.get("has_image", False)
         
         # 检查是否还有步骤需要执行
         if current_step >= len(plan):
@@ -312,7 +373,14 @@ class AutoActAgent(BaseAgent):
         
         # 获取当前步骤
         step = plan[current_step]
+        
+        # 确保步骤是字典格式
+        if not isinstance(step, dict):
+            # 如果步骤是字符串或其他非字典类型，转换为字典格式
+            step = {"description": str(step), "tool": ""}
+            
         tool_name = step.get("tool", "")
+        step_description = step.get("description", "无描述")
         
         # 如果是final_answer，直接跳到反思阶段
         if tool_name == "final_answer":
@@ -323,91 +391,138 @@ class AutoActAgent(BaseAgent):
                 "current_agent": SubAgentType.REFLECT
             }
         
-        # 构造工具调用提示
-        system_message = SystemMessage(content=self.tool_system_prompt)
+        # 构建工具调用消息列表
+        tool_messages = []
         
-        # 获取工具描述
-        tool = self._find_tool_by_name(tool_name)
-        tool_desc = f"工具名称: {tool_name}\n描述: {getattr(tool, 'description', '无描述')}"
-        if hasattr(tool, "args_schema"):
-            schema_props = getattr(tool.args_schema, "__annotations__", {})
-            tool_desc += f"\n参数: {schema_props}"
+        # 添加系统消息
+        tool_messages.append(SystemMessage(content=self.tool_system_prompt))
         
-        # 构造工具调用提示
-        tool_prompt = f"""
-        请为以下计划步骤构造精确的工具调用参数:
-        
-        步骤说明: {step.get('description', '无描述')}
-        
-        工具信息:
-        {tool_desc}
-        
-        预期参数:
-        {step.get('parameters', {})}
-        
-        请构造一个有效的JSON对象，包含工具所需的所有参数。只输出参数JSON，不要包含其他解释。
-        """
-        
-        # 创建工具调用消息
-        tool_messages = [system_message, HumanMessage(content=tool_prompt)]
-        
-        # 调用模型生成工具参数
-        tool_response = await self.model.ainvoke(tool_messages)
-        tool_content = tool_response.content
-        
-        # 提取JSON参数
-        try:
-            # 尝试从响应中提取JSON
-            json_match = re.search(r'\{.*\}', tool_content, re.DOTALL)
-            if json_match:
-                tool_params = json.loads(json_match.group(0))
-            else:
-                # 如果没有找到JSON，尝试解析整个响应
-                tool_params = json.loads(tool_content)
-            
-            # 确保参数是字典形式
-            if not isinstance(tool_params, dict):
-                raise ValueError("工具参数必须是字典形式")
-            
-            # 实际调用工具
-            logger.info(f"调用工具: {tool_name}，参数: {tool_params}")
-            
-            tool_result = None
-            if tool:
-                # 如果工具是异步的
-                if asyncio.iscoroutinefunction(getattr(tool, "_run", None)) or asyncio.iscoroutinefunction(getattr(tool, "run", None)):
-                    run_method = getattr(tool, "_run", None) or getattr(tool, "run", None)
-                    tool_result = await run_method(**tool_params)
+        # 查找原始多模态消息并添加
+        original_message = None
+        image_url = None
+        for msg in messages:
+            if msg.type == "human":
+                if isinstance(msg.content, list):
+                    # 处理多模态内容
+                    for item in msg.content:
+                        if isinstance(item, dict) and item.get("type") == "image_url":
+                            has_image = True
+                            if "image_url" in item and "url" in item["image_url"]:
+                                image_url = item["image_url"]["url"]
+                    original_message = msg
                 else:
-                    # 同步工具
-                    run_method = getattr(tool, "_run", None) or getattr(tool, "run", None)
-                    tool_result = run_method(**tool_params)
-            else:
-                tool_result = f"工具 {tool_name} 不存在或无法调用"
+                    # 普通文本消息
+                    original_message = msg
+                break
+        
+        # 如果有图像，添加原始消息让模型可以看到
+        if has_image and original_message and isinstance(original_message.content, list):
+            tool_messages.append(original_message)
+        
+        # 创建工具说明提示
+        tools_description = ""
+        if self.tools:
+            for tool in self.tools:
+                if getattr(tool, "name", "") == tool_name or not tool_name:
+                    tools_description += f"- {getattr(tool, 'name', 'unknown')}: {getattr(tool, 'description', '无描述')}\n"
+        
+        # 创建工具调用提示
+        tool_prompt = f"""
+当前需要执行的计划步骤：
+{step_description}
+
+可用工具：
+{tools_description}
+
+请执行这个步骤，如果需要使用工具，请使用适当的工具来完成任务。
+
+重要提示：
+1. 如果你认为所有必要的工具调用已完成，或已获得足够信息回答原始问题
+2. 或者这是计划中的最后一个步骤
+3. 或者当前步骤已经解决了用户的核心问题
+
+请明确写出"任务已完成，现在可以生成最终答案"，而不是继续调用工具。
+"""
+        tool_messages.append(HumanMessage(content=tool_prompt))
+        
+        # 使用绑定工具的模型调用
+        llm_with_tools = self.model.bind_tools(self.tools)
+        
+        # 调用模型
+        try:
+            logger.info(f"执行步骤 {current_step + 1}: {step_description}")
+            response = await llm_with_tools.ainvoke(tool_messages)
             
-            # 更新状态
-            tool_calls = state.get("tool_calls", [])
-            tool_calls.append({
-                "tool": tool_name,
-                "parameters": tool_params,
-                "result": str(tool_result)
-            })
-            
+            # 处理响应
+            tool_calls = []
             observations = state.get("observations", [])
-            observations.append(f"工具 {tool_name} 返回结果: {tool_result}")
+            tool_result = None
             
-            scratchpad = state.get("scratchpad", "")
-            scratchpad += f"\n步骤 {current_step + 1}: 使用工具 {tool_name}\n参数: {json.dumps(tool_params, ensure_ascii=False)}\n结果: {tool_result}\n"
+            # 检查响应是否包含完成信号
+            completion_indicators = [
+                "任务已完成", "可以生成最终答案", "生成最终回答", 
+                "回答原始问题", "提供最终结论", "任务完成", 
+                "工具调用已完成", "已经获得足够信息"
+            ]
+            
+            is_task_complete = False
+            response_content = response.content if hasattr(response, "content") else ""
+            
+            if response_content:
+                # 检查是否有完成信号
+                if any(indicator in response_content for indicator in completion_indicators):
+                    is_task_complete = True
+                    logger.info("检测到任务完成信号，准备生成最终答案")
+                    observations.append("检测到任务完成信号，准备生成最终答案")
+                    scratchpad += f"\n检测到任务完成信号：{response_content}\n"
+            
+            # 如果任务已完成，跳转到反思阶段
+            if is_task_complete:
+                updated_messages = state["messages"] + [AIMessage(content=response_content)]
+                return {
+                    **state,
+                    "messages": updated_messages,
+                    "observations": observations,
+                    "scratchpad": scratchpad,
+                    "current_step": len(plan),  # 设置为计划长度，表示计划已完成
+                    "current_agent": SubAgentType.REFLECT
+                }
+                
+            # 检查响应中是否有工具调用
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                for call in response.tool_calls:
+                    tool_name = call.get("name", "")
+                    tool_params = call.get("args", {})
+                    tool_output = call.get("output", "")
+                    
+                    # 记录工具调用
+                    tool_calls.append({
+                        "tool": tool_name,
+                        "parameters": tool_params,
+                        "result": tool_output
+                    })
+                    
+                    # 添加观察
+                    observations.append(f"工具 {tool_name} 返回结果: {tool_output}")
+                    
+                    # 更新记录区
+                    scratchpad += f"\n步骤 {current_step + 1}: 使用工具 {tool_name}\n参数: {json.dumps(tool_params, ensure_ascii=False)}\n结果: {tool_output}\n"
+                    
+                    # 用于返回的内容
+                    tool_result = tool_output
+            else:
+                # 没有工具调用，直接使用模型输出作为结果
+                tool_result = response.content
+                observations.append(f"步骤 {current_step + 1} 执行结果: {tool_result}")
+                scratchpad += f"\n步骤 {current_step + 1}: {step_description}\n结果: {tool_result}\n"
             
             # 更新消息历史
-            updated_messages = state["messages"] + [
-                AIMessage(content=f"执行步骤 {current_step + 1}: {step.get('description', '')}")
-            ]
+            updated_messages = state["messages"] + [AIMessage(content=f"执行步骤 {current_step + 1}: {step_description}\n结果: {tool_result}")]
             
             return {
                 **state,
                 "current_step": current_step + 1,  # 增加步骤计数
-                "tool_calls": tool_calls,
+                "tool_calls": state.get("tool_calls", []) + tool_calls,
                 "observations": observations,
                 "scratchpad": scratchpad,
                 "messages": updated_messages
@@ -417,10 +532,10 @@ class AutoActAgent(BaseAgent):
             logger.error(f"工具调用失败: {e}")
             # 记录失败
             observations = state.get("observations", [])
-            observations.append(f"工具 {tool_name} 调用失败: {str(e)}")
+            observations.append(f"步骤 {current_step + 1} 执行失败: {str(e)}")
             
             scratchpad = state.get("scratchpad", "")
-            scratchpad += f"\n步骤 {current_step + 1}: 使用工具 {tool_name} 失败 - {str(e)}\n"
+            scratchpad += f"\n步骤 {current_step + 1}: 执行失败 - {str(e)}\n"
             
             # 更新消息历史
             updated_messages = state["messages"] + [
@@ -443,11 +558,21 @@ class AutoActAgent(BaseAgent):
         # 构造反思提示
         system_message = SystemMessage(content=self.reflect_system_prompt)
         
-        # 获取用户问题
+        # 获取用户问题和图像信息
         user_query = ""
+        has_image = False
+        original_multimodal_message = None
+        
         for msg in messages:
             if msg.type == "human":
-                user_query = msg.content
+                if isinstance(msg.content, str):
+                    user_query = msg.content
+                elif isinstance(msg.content, list):
+                    # 处理多模态消息
+                    has_image = any(item.get("type") == "image_url" for item in msg.content if isinstance(item, dict))
+                    text_parts = [item.get("text", "") for item in msg.content if isinstance(item, dict) and item.get("type") == "text"]
+                    user_query = " ".join(text_parts)
+                    original_multimodal_message = msg
                 break
         
         # 整合所有观察结果
@@ -457,16 +582,21 @@ class AutoActAgent(BaseAgent):
         reflect_prompt = f"""
         请基于以下信息回答原始问题:
         
-        原始问题: {user_query}
+        原始问题: {user_query}{"（注意：原始问题包含图像，请在回答中考虑图像内容）" if has_image else ""}
         
         执行步骤与观察结果:
         {all_observations}
         
-        请提供全面、准确的最终答案。直接回答问题，无需解释你的思考过程。
+        请提供全面、准确的最终答案。直接回答问题，清晰地解释你的推理过程。
+        注意：生成完最终答案后，请在答案最后添加一行：[任务已完成]
         """
         
         # 创建反思消息
-        reflect_messages = [system_message, HumanMessage(content=reflect_prompt)]
+        if has_image and original_multimodal_message:
+            # 如果有图像，使用原始多模态消息
+            reflect_messages = [system_message, original_multimodal_message, HumanMessage(content=reflect_prompt)]
+        else:
+            reflect_messages = [system_message, HumanMessage(content=reflect_prompt)]
         
         # 调用模型生成最终答案
         reflect_response = await self.model.ainvoke(reflect_messages)
@@ -481,10 +611,16 @@ class AutoActAgent(BaseAgent):
         # 更新消息历史
         updated_messages = state["messages"] + [AIMessage(content=final_answer)]
         
+        # 检查答案中是否包含完成标记
+        completion_markers = ["任务已完成", "Task completed", "[任务已完成]"]
+        is_marked_complete = any(marker in final_answer for marker in completion_markers)
+        
+        logger.info(f"最终答案完成状态: {is_marked_complete}")
+        
         return {
             **state,
             "final_answer": final_answer,
-            "is_complete": True,
+            "is_complete": True,  # 始终设置为完成
             "scratchpad": scratchpad,
             "messages": updated_messages
         }
@@ -550,7 +686,7 @@ class AutoActAgent(BaseAgent):
             logger.error(f"自我指导过程出错: {e}")
         
         return generated_samples
-    
+
     async def select_tools(self, task_description: str) -> List[Dict[str, Any]]:
         """为特定任务自动选择适合的工具"""
         if not self.tools:
@@ -606,3 +742,215 @@ class AutoActAgent(BaseAgent):
         except Exception as e:
             logger.error(f"工具选择过程出错: {e}")
             return []
+
+    async def _execute_node(self, state: AutoActState):
+        """执行节点，负责执行单个计划步骤"""
+        messages = state.get("messages", [])
+        plan = state.get("plan", "")
+        plan_steps = state.get("plan_steps", [])
+        current_step_index = state.get("current_step_index", 0)
+        scratchpad = state.get("scratchpad", "")
+        has_image = state.get("has_image", False)
+        
+        # 如果已经完成所有步骤，则转到下一个节点
+        if current_step_index >= len(plan_steps):
+            return {**state, "node": "final"}
+        
+        # 获取当前步骤
+        current_step = plan_steps[current_step_index]
+        logger.info(f"执行步骤 {current_step_index + 1}: {current_step}")
+        
+        # 确保步骤是字典格式
+        if not isinstance(current_step, dict):
+            # 如果步骤是字符串或其他非字典类型，转换为字典格式
+            current_step = {"description": str(current_step), "tool": ""}
+            
+        step_description = current_step.get("description", "无描述")
+        
+        # 构建执行消息
+        system_message = SystemMessage(content=self.execution_system_prompt)
+        
+        # 查找原始多模态消息
+        original_multimodal_message = None
+        if has_image:
+            for msg in messages:
+                if msg.type == "human" and isinstance(msg.content, list):
+                    has_image_url = any(item.get("type") == "image_url" for item in msg.content if isinstance(item, dict))
+                    if has_image_url:
+                        original_multimodal_message = msg
+                        break
+        
+        # 构建执行消息
+        execution_messages = [system_message]
+        
+        # 添加原始消息
+        if has_image and original_multimodal_message:
+            # 使用原始多模态消息
+            execution_messages.append(original_multimodal_message)
+        else:
+            # 使用普通消息
+            execution_messages.extend(messages)
+        
+        # 添加计划信息
+        plan_info = f"""
+我已为解决问题制定了以下计划：
+{plan}
+
+当前正在执行步骤 {current_step_index + 1}:
+{step_description}
+
+请执行这个步骤，如果需要使用工具，请返回工具调用。如果不需要工具，请直接返回步骤执行结果。
+"""
+        execution_messages.append(HumanMessage(content=plan_info))
+        
+        # 调用模型执行步骤
+        execution_response = await self.model.ainvoke(execution_messages)
+        step_result = execution_response.content
+        
+        # 更新记录区
+        scratchpad += f"\n步骤 {current_step_index + 1}: {step_description}\n结果: {step_result}\n"
+        
+        # 更新状态，移至下一步骤
+        return {
+            **state,
+            "messages": messages + [AIMessage(content=step_result)],
+            "current_step_index": current_step_index + 1,
+            "scratchpad": scratchpad
+        }
+
+    async def _reflection_node(self, state: AutoActState):
+        """反思节点，负责分析执行结果并决定下一步行动"""
+        messages = state.get("messages", [])
+        plan = state.get("plan", "")
+        plan_steps = state.get("plan_steps", [])
+        current_step_index = state.get("current_step_index", 0)
+        scratchpad = state.get("scratchpad", "")
+        has_image = state.get("has_image", False)
+        
+        # 构建反思消息
+        system_message = SystemMessage(content=self.reflection_system_prompt)
+        
+        # 查找原始多模态消息
+        original_multimodal_message = None
+        if has_image:
+            for msg in messages:
+                if msg.type == "human" and isinstance(msg.content, list):
+                    has_image_url = any(item.get("type") == "image_url" for item in msg.content if isinstance(item, dict))
+                    if has_image_url:
+                        original_multimodal_message = msg
+                        break
+        
+        # 构建反思消息
+        reflection_messages = [system_message]
+        
+        # 添加原始消息
+        if has_image and original_multimodal_message:
+            # 使用原始多模态消息
+            reflection_messages.append(original_multimodal_message)
+        else:
+            # 使用普通消息
+            reflection_messages.extend(messages)
+        
+        # 添加计划和执行历史信息
+        reflection_info = f"""
+我已为解决问题制定了以下计划：
+{plan}
+
+到目前为止已完成以下步骤：
+{scratchpad}
+
+请分析执行情况，并决定下一步行动：
+1. 如果所有步骤已完成，请总结结果并完成任务
+2. 如果需要调整计划，请提供调整后的计划并说明理由
+3. 如果执行中遇到问题，请给出解决方案
+
+请提供一个简短的反思分析，以及接下来的行动建议。
+"""
+        reflection_messages.append(HumanMessage(content=reflection_info))
+        
+        # 调用模型进行反思
+        reflection_response = await self.model.ainvoke(reflection_messages)
+        reflection = reflection_response.content
+        
+        # 更新记录区
+        scratchpad += f"\n反思：\n{reflection}\n"
+        
+        # 检查是否所有步骤都已完成
+        if current_step_index >= len(plan_steps):
+            # 所有步骤完成，移至最终节点
+            return {
+                **state,
+                "messages": messages + [AIMessage(content=reflection)],
+                "scratchpad": scratchpad,
+                "node": "final"
+            }
+        else:
+            # 继续执行下一步骤
+            return {
+                **state,
+                "messages": messages + [AIMessage(content=reflection)],
+                "scratchpad": scratchpad,
+                "node": "execute"
+            }
+
+    async def _final_node(self, state: AutoActState):
+        """最终节点，整合所有结果并生成最终输出"""
+        messages = state.get("messages", [])
+        plan = state.get("plan", "")
+        scratchpad = state.get("scratchpad", "")
+        has_image = state.get("has_image", False)
+        
+        # 构建最终消息
+        system_message = SystemMessage(content=self.final_system_prompt)
+        
+        # 查找原始多模态消息
+        original_multimodal_message = None
+        if has_image:
+            for msg in messages:
+                if msg.type == "human" and isinstance(msg.content, list):
+                    has_image_url = any(item.get("type") == "image_url" for item in msg.content if isinstance(item, dict))
+                    if has_image_url:
+                        original_multimodal_message = msg
+                        break
+        
+        # 构建最终消息列表
+        final_messages = [system_message]
+        
+        # 添加原始消息
+        if has_image and original_multimodal_message:
+            # 使用原始多模态消息
+            final_messages.append(original_multimodal_message)
+        else:
+            # 使用普通消息
+            final_messages.extend(messages[:1])  # 只添加第一条用户消息
+        
+        # 添加执行历史信息
+        final_info = f"""
+我已完成了解决问题的所有步骤。
+
+我制定的计划是：
+{plan}
+
+执行过程和结果：
+{scratchpad}
+
+请基于以上信息，为用户提供一个完整、清晰的最终回答。回答应该：
+1. 直接解决用户的原始问题
+2. 总结主要发现和结果
+3. 如有必要，提供任何相关建议或注意事项
+
+请确保回答简洁明了，直接满足用户需求。
+"""
+        final_messages.append(HumanMessage(content=final_info))
+        
+        # 调用模型生成最终回答
+        final_response = await self.model.ainvoke(final_messages)
+        final_answer = final_response.content
+        
+        # 更新状态并返回最终结果
+        return {
+            **state,
+            "messages": messages + [AIMessage(content=final_answer)],
+            "scratchpad": scratchpad + f"\n最终回答：\n{final_answer}",
+            "node": None  # 表示流程结束
+        }
